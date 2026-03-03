@@ -1,27 +1,35 @@
 /**
  * 處理資料讀取 (GET)
- * 參數: roomId
- * 回傳: { status, data, pw, lastUpdated }
+ * 參數: roomId, pw, authOnly (可選)
+ * 回傳: { status, data?, lastUpdated?, message? }
+ * 注意: 密碼在後端比對，不回傳明文密碼
  */
 function doGet(e) {
   var roomId = e.parameter.roomId;
+  var pw = e.parameter.pw;
+  var authOnly = e.parameter.authOnly === 'true';
   var sheet = SpreadsheetApp.getActiveSpreadsheet().getActiveSheet();
   var data = sheet.getDataRange().getValues();
   
   for (var i = 1; i < data.length; i++) {
     if (data[i][0] == roomId) {
-      return ContentService.createTextOutput(JSON.stringify({
+      // 後端密碼比對
+      if (String(data[i][2]) !== String(pw)) {
+        return json({ status: "wrong_password", message: "密碼錯誤，無法登入" });
+      }
+      // 僅驗證模式：不回傳資料，減少傳輸量
+      if (authOnly) {
+        return json({ status: "success" });
+      }
+      return json({
         status: "success",
-        data: data[i][1],        // 資料內容
-        pw: data[i][2],          // 獨立密碼欄位 (C 欄)
-        lastUpdated: data[i][3]  // 最後更新時間 (D 欄)
-      })).setMimeType(ContentService.MimeType.JSON);
+        data: data[i][1],
+        lastUpdated: data[i][3]
+      });
     }
   }
   
-  return ContentService.createTextOutput(JSON.stringify({
-    status: "not_found"
-  })).setMimeType(ContentService.MimeType.JSON);
+  return json({ status: "not_found" });
 }
 
 /**
@@ -33,28 +41,31 @@ function doPost(e) {
   var roomId = params.roomId;
   var pw = params.pw;
   var content = params.data;
-  var now = new Date(); // 取得當前時間
+  var now = new Date();
   
   var sheet = SpreadsheetApp.getActiveSpreadsheet().getActiveSheet();
   var data = sheet.getDataRange().getValues();
   var found = false;
   
-  // 尋找現有房間進行更新
   for (var i = 1; i < data.length; i++) {
     if (data[i][0] == roomId) {
-      sheet.getRange(i + 1, 2).setValue(content); // 更新 Data (B)
-      sheet.getRange(i + 1, 3).setValue(pw);      // 更新 PW (C)
-      sheet.getRange(i + 1, 4).setValue(now);     // 更新 Last Updated (D)
+      sheet.getRange(i + 1, 2).setValue(content);
+      sheet.getRange(i + 1, 3).setValue(pw);
+      sheet.getRange(i + 1, 4).setValue(now);
       found = true;
       break;
     }
   }
   
-  // 若沒找到，則新增一行
   if (!found) {
     sheet.appendRow([roomId, content, pw, now]);
   }
   
-  return ContentService.createTextOutput(JSON.stringify({ status: "success" }))
+  return json({ status: "success" });
+}
+
+/** 工具函式：回傳 JSON */
+function json(obj) {
+  return ContentService.createTextOutput(JSON.stringify(obj))
     .setMimeType(ContentService.MimeType.JSON);
 }
