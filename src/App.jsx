@@ -874,7 +874,7 @@ export default function App() {
                                   </div>
                                 )) : (
                                   <div className="text-center py-2 text-xs text-stone-300 italic">
-                                    {showUnpackedOnly ? "此類別已完成" : "尚無安排"}
+                                    {filterMode !== 'all' ? "此類別已完成" : "尚無安排"}
                                   </div>
                                 )}
                               </div>
