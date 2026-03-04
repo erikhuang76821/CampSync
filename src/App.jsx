@@ -37,25 +37,25 @@ import { getAuth, signInAnonymously, onAuthStateChanged, signInWithCustomToken }
 import { getFirestore, doc, setDoc, onSnapshot } from "firebase/firestore";
 import { calculateDebts, computeSettlement, INITIAL_CATEGORIES } from './logic';
 
-// --- 全域設定 ---
-let firebaseConfig = null;
-try {
-  firebaseConfig = typeof window.__firebase_config !== 'undefined' ? JSON.parse(window.__firebase_config) : null;
-} catch (e) {
-  if (import.meta.env.DEV) console.error('Firebase config parse error:', e);
-}
-const appId = typeof window.__app_id !== 'undefined' ? window.__app_id : 'camp-sync-default';
+// --- Firebase 設定 ---
+const firebaseConfig = {
+  apiKey: "AIzaSyARalLtrATMt7Bx9DtWMRQMDeYeA5sXrJg",
+  authDomain: "campsync-19e0a.firebaseapp.com",
+  projectId: "campsync-19e0a",
+  storageBucket: "campsync-19e0a.firebasestorage.app",
+  messagingSenderId: "901875840803",
+  appId: "1:901875840803:web:dffbd949a78e634d63fe96"
+};
+const appId = 'campsync';
 
 // 初始化 Firebase
 let db, auth;
-if (firebaseConfig) {
-  try {
-    const app = initializeApp(firebaseConfig);
-    auth = getAuth(app);
-    db = getFirestore(app);
-  } catch (e) {
-    if (import.meta.env.DEV) console.error("Firebase 初始化錯誤:", e);
-  }
+try {
+  const app = initializeApp(firebaseConfig);
+  auth = getAuth(app);
+  db = getFirestore(app);
+} catch (e) {
+  if (import.meta.env.DEV) console.error("Firebase 初始化錯誤:", e);
 }
 
 // --- 密碼 Hash 工具 ---
@@ -222,9 +222,11 @@ export default function App() {
     return () => unsubscribe();
   }, [isRoomAuthenticated, firebaseUser, roomId, currentUser]);
 
-  // --- GAS 定時輪詢 (Polling) — 多人即時同步 ---
+  // --- GAS 定時輪詢 (Polling) — 僅在無 Firebase 時作為 fallback ---
   const gasPollTimer = useRef(null);
   useEffect(() => {
+    // Firebase 可用時 onSnapshot 已處理即時同步，不需要 polling
+    if (db) return;
     if (!gasUrl || !roomId || !isRoomAuthenticated || !roomPassword || !currentUser) return;
 
     const POLL_INTERVAL = 2000; // 2 秒
