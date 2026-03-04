@@ -497,6 +497,11 @@ export default function App() {
     reader.readAsText(file);
     e.target.value = ''; // reset
   };
+  const moveItemToMeal = (itemId, newDayIndex, newMealId) => {
+    saveData(items.map(i => i.id === itemId ? { ...i, dayIndex: newDayIndex, mealId: newMealId } : i), users, daysCount);
+    showNotification('已移動食材');
+  };
+
   const togglePacked = (id) => saveData(items.map(i => i.id === id ? { ...i, packed: !i.packed } : i), users, daysCount);
   const updateAssignment = (id, user) => saveData(items.map(i => i.id === id ? { ...i, assignedTo: user === "unassigned" ? null : user } : i), users, daysCount);
   const updateCost = (id, cost) => saveData(items.map(i => i.id === id ? { ...i, cost: parseInt(cost) || 0 } : i), users, daysCount);
@@ -516,12 +521,17 @@ export default function App() {
 
   // --- 衍生資料 ---
   const settlementData = useMemo(() => {
+    // 建立隱藏餐別索引
+    const isHiddenFood = (item) => {
+      if (item.type !== 'food') return false;
+      return (hiddenMeals[item.dayIndex] || []).includes(item.mealId);
+    };
     const balances = {};
     users.forEach(u => balances[u] = 0);
     let totalExpense = 0;
     const expenseItems = [];
     items.forEach(item => {
-      if (item.cost > 0) {
+      if (item.cost > 0 && !isHiddenFood(item)) {
         expenseItems.push(item);
         totalExpense += item.cost;
         const payer = item.assignedTo;
@@ -534,7 +544,7 @@ export default function App() {
       }
     });
     return { balances, totalExpense, transactions: calculateDebts(balances), expenseItems };
-  }, [items, users]);
+  }, [items, users, hiddenMeals]);
 
   const groupedGear = useMemo(() => {
     return INITIAL_CATEGORIES.map(cat => ({
@@ -854,9 +864,30 @@ export default function App() {
                                   <button onClick={() => removeMeal(meal.id, dayIndex)} className="p-1 text-stone-300 hover:text-red-500 transition-colors shrink-0" title="刪除此餐別"><X size={14} /></button>
                                 </div>
                               </div>
-                              <div className="p-2 space-y-2">
+                              <div className="p-2 space-y-2"
+                                onDragOver={(e) => { e.preventDefault(); e.currentTarget.classList.add('bg-amber-50'); }}
+                                onDragLeave={(e) => { e.currentTarget.classList.remove('bg-amber-50'); }}
+                                onDrop={(e) => {
+                                  e.preventDefault();
+                                  e.currentTarget.classList.remove('bg-amber-50');
+                                  const itemId = parseInt(e.dataTransfer.getData('text/plain'));
+                                  if (itemId) moveItemToMeal(itemId, dayIndex, meal.id);
+                                }}
+                              >
                                 {mealItems.length > 0 ? mealItems.map(item => (
-                                  <ItemRow key={item.id} item={item} users={users} currentUser={currentUser} compact={true} actions={{ togglePacked, updateAssignment, updateCost, deleteItem, updateSplitMembers, updateQuantity }} />
+                                  <div key={item.id}
+                                    draggable
+                                    onDragStart={(e) => { e.dataTransfer.setData('text/plain', String(item.id)); e.currentTarget.style.opacity = '0.4'; }}
+                                    onDragEnd={(e) => { e.currentTarget.style.opacity = '1'; }}
+                                    onTouchStart={(e) => {
+                                      const timer = setTimeout(() => { e.currentTarget.dataset.dragging = 'true'; e.currentTarget.style.opacity = '0.4'; }, 500);
+                                      e.currentTarget.dataset.touchTimer = timer;
+                                    }}
+                                    onTouchEnd={(e) => { clearTimeout(e.currentTarget.dataset.touchTimer); e.currentTarget.style.opacity = '1'; delete e.currentTarget.dataset.dragging; }}
+                                    className="cursor-grab active:cursor-grabbing"
+                                  >
+                                    <ItemRow item={item} users={users} currentUser={currentUser} compact={true} actions={{ togglePacked, updateAssignment, updateCost, deleteItem, updateSplitMembers, updateQuantity }} />
+                                  </div>
                                 )) : (
                                   <div className="text-center py-2 text-xs text-stone-300 italic">
                                     {showUnpackedOnly ? "此類別已完成" : "尚無安排"}
