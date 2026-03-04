@@ -34,7 +34,7 @@ import {
 // --- Firebase 引用 ---
 import { initializeApp } from "firebase/app";
 import { getAuth, signInAnonymously, onAuthStateChanged, signInWithCustomToken } from "firebase/auth";
-import { getFirestore, doc, setDoc, onSnapshot } from "firebase/firestore";
+import { getFirestore, doc, setDoc, getDoc, onSnapshot } from "firebase/firestore";
 import { calculateDebts, computeSettlement, INITIAL_CATEGORIES } from './logic';
 
 // --- Firebase 設定 ---
@@ -67,7 +67,6 @@ const hashPassword = async (pw) => {
 };
 
 // --- 常數設定 ---
-const DEFAULT_GAS_URL = import.meta.env.VITE_GAS_URL || "https://script.google.com/macros/s/AKfycbxYWG2vawPdPrmGdGy0MMajz2uTBtw_oKMYoeMFmFdv-0c5_vffYC2b80uW-ebR-Zc/exec";
 const MEAL_TYPES = [
   { id: 'breakfast', label: '早餐', icon: <Sunrise className="w-4 h-4" /> },
   { id: 'lunch', label: '午餐', icon: <Sun className="w-4 h-4" /> },
@@ -118,9 +117,7 @@ export default function App() {
   const expCostRef = useRef(null);
   const expPayerRef = useRef(null);
   const fileInputRef = useRef(null);
-  const lastLocalWrite = useRef(0);  // 最近一次本地寫入時間戳
   const isLocalUpdate = useRef(false); // Firebase onSnapshot 迴圈保護
-  const lastPollData = useRef('');     // 上次 poll 拿到的 data 字串（用於 diff）
   // --- 狀態管理 ---
   const [activeTab, setActiveTab] = useState('list');
   const [listMode, setListMode] = useState('gear');
@@ -155,10 +152,7 @@ export default function App() {
   // 同步狀態
   const [firebaseUser, setFirebaseUser] = useState(null);
   const [notification, setNotification] = useState(null);
-
-  // Google Sheet 狀態
-  const [gasUrl, setGasUrl] = useState(DEFAULT_GAS_URL);
-  const [isSheetSyncing, setIsSheetSyncing] = useState(false);
+  const [isAuthenticating, setIsAuthenticating] = useState(false);
 
   // --- 副作用處理 ---
   useEffect(() => {
@@ -222,65 +216,8 @@ export default function App() {
     return () => unsubscribe();
   }, [isRoomAuthenticated, firebaseUser, roomId, currentUser]);
 
-  // --- GAS 定時輪詢 (Polling) — 僅在無 Firebase 時作為 fallback ---
-  const gasPollTimer = useRef(null);
-  useEffect(() => {
-    // Firebase 可用時 onSnapshot 已處理即時同步，不需要 polling
-    if (db) return;
-    if (!gasUrl || !roomId || !isRoomAuthenticated || !roomPassword || !currentUser) return;
-
-    const POLL_INTERVAL = 2000; // 2 秒
-
-    const pollFromGAS = async () => {
-      // 剛寫入不到 1.5 秒，跳過避免覆蓋自己的資料
-      if (Date.now() - lastLocalWrite.current < 1500) return;
-
-      const pwHash = roomPassword.length === 64 ? roomPassword : await hashPassword(roomPassword);
-      try {
-        const response = await fetch(`${gasUrl}?roomId=${encodeURIComponent(roomId)}&pw=${encodeURIComponent(pwHash)}`);
-        const result = await response.json();
-
-        if (result.status === 'success' && result.data) {
-          // 資料字串完全相同 → 無變更，跳過（不觸發 re-render，不影響編輯中的 UI）
-          if (result.data === lastPollData.current) return;
-          lastPollData.current = result.data;
-
-          const parsed = JSON.parse(result.data);
-          setItems(parsed.items || []);
-          const remoteUsers = parsed.users || [];
-          if (currentUser && !remoteUsers.includes(currentUser)) {
-            setUsers([...remoteUsers, currentUser]);
-          } else {
-            setUsers(remoteUsers);
-          }
-          setDaysCount(parsed.daysCount || 2);
-          if (parsed.activeMeals) setActiveMeals(parsed.activeMeals);
-          if (parsed.mealDishNames) setMealDishNames(parsed.mealDishNames);
-          if (parsed.hiddenMeals) setHiddenMeals(parsed.hiddenMeals);
-        } else if (result.status === 'wrong_password') {
-          clearInterval(gasPollTimer.current);
-          setIsRoomAuthenticated(false);
-          localStorage.removeItem('camp_room_id');
-          localStorage.removeItem('camp_room_password');
-        }
-      } catch (e) {
-        // 靜默失敗
-        if (import.meta.env.DEV) console.warn('[GAS Poll]', e);
-      }
-    };
-
-    pollFromGAS();
-    gasPollTimer.current = setInterval(pollFromGAS, POLL_INTERVAL);
-
-    return () => clearInterval(gasPollTimer.current);
-  }, [gasUrl, roomId, isRoomAuthenticated, roomPassword, currentUser]);
-
   // --- 資料存取輔助 ---
-  const gasSyncTimer = useRef(null);
   const saveData = (newItems, newUsers, newDaysCount, extraState = {}) => {
-    // 記錄本地寫入時間戳，防止 poll 回來的舊資料覆蓋
-    lastLocalWrite.current = Date.now();
-
     setItems(newItems);
     setUsers(newUsers);
     setDaysCount(newDaysCount);
@@ -295,17 +232,6 @@ export default function App() {
       hiddenMeals: extraState.hiddenMeals ?? hiddenMeals,
       lastUpdated: new Date().toISOString()
     };
-
-    // 同步更新 lastPollData，這樣下次 poll 回來如果是自己寫的相同資料就會跳過
-    lastPollData.current = JSON.stringify(payload);
-
-    // V-10 fix: GAS sync debounce 500ms
-    if (gasUrl && roomId && isRoomAuthenticated) {
-      clearTimeout(gasSyncTimer.current);
-      gasSyncTimer.current = setTimeout(() => {
-        syncWithGoogleSheet('write', roomId, payload);
-      }, 500);
-    }
 
     if (db && roomId && firebaseUser) {
       saveToCloud(newItems, newUsers, newDaysCount, extraState);
@@ -331,91 +257,6 @@ export default function App() {
     }
   };
 
-  // --- Google Sheet 同步邏輯 (密碼全程 hash 傳輸) ---
-  const syncWithGoogleSheet = async (action, targetRoomId, dataObj = null) => {
-    if (!gasUrl) return;
-    setIsSheetSyncing(true);
-    // 判斷 roomPassword 是否已是 hash（長度 64 = SHA-256 hex）
-    const pwHash = roomPassword.length === 64 ? roomPassword : await hashPassword(roomPassword);
-
-    try {
-      if (action === 'write') {
-        const payload = {
-          roomId: targetRoomId,
-          pw: pwHash,
-          data: JSON.stringify(dataObj || { items, users, daysCount })
-        };
-        await fetch(gasUrl, {
-          method: 'POST',
-          mode: 'no-cors',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify(payload)
-        });
-      } else if (action === 'read') {
-        // GAS 限制：doPost 走 302 redirect 無法跨域讀回應，改用 GET + hash（非明文密碼）
-        const response = await fetch(`${gasUrl}?roomId=${encodeURIComponent(targetRoomId)}&pw=${encodeURIComponent(pwHash)}`);
-        const result = await response.json();
-
-        // 後端驗證密碼失敗
-        if (result.status === "wrong_password" ||
-          result.status === "error") {
-
-          showNotification(result.message || "密碼錯誤，無法登入", "error");
-          setIsRoomAuthenticated(false);
-          localStorage.removeItem('camp_room_id');
-          localStorage.removeItem('camp_room_password');
-          return false;
-        }
-
-        if (result.status === "success") {
-          // 伺服器端已驗證密碼正確
-          setIsRoomAuthenticated(true);
-
-          // 只有在驗證成功且有回傳資料時才更新清單 (避免無謂的資料下載)
-          if (result.data) {
-            try {
-              const parsed = JSON.parse(result.data);
-              setItems(parsed.items || []);
-              setUsers(parsed.users || []);
-              setDaysCount(parsed.daysCount || 2);
-              if (parsed.activeMeals) setActiveMeals(parsed.activeMeals);
-              if (parsed.mealDishNames) setMealDishNames(parsed.mealDishNames);
-              if (parsed.hiddenMeals) setHiddenMeals(parsed.hiddenMeals);
-            } catch (e) {
-              if (import.meta.env.DEV) console.error("解析資料失敗", e);
-            }
-          }
-
-          showNotification(`成功進入房間：${targetRoomId}`);
-          localStorage.setItem('camp_room_id', targetRoomId);
-          localStorage.setItem('camp_room_password', pwHash); // V-01 fix: 存 hash
-          return true;
-        } else if (result.status === "not_found") {
-          // 房間不存在，允許創建新房間
-          setIsRoomAuthenticated(true);
-          showNotification("新房間創建成功！", "success");
-
-          localStorage.setItem('camp_room_id', targetRoomId);
-          localStorage.setItem('camp_room_password', pwHash); // V-01 fix: 存 hash
-
-          // 初始化新房間資料並同步回雲端
-          syncWithGoogleSheet('write', targetRoomId, {
-            items: INITIAL_ITEMS,
-            users: INITIAL_USERS,
-            daysCount: 2
-          });
-          return true;
-        }
-      }
-    } catch (error) {
-      if (import.meta.env.DEV) console.error("Sheet 同步錯誤:", error);
-      showNotification("同步連線失敗，請檢查網路", "error");
-    } finally {
-      setIsSheetSyncing(false);
-    }
-    return false;
-  };
-
   const showNotification = (msg, type = 'success') => {
     setNotification({ msg, type });
     setTimeout(() => setNotification(null), 3000);
@@ -424,11 +265,68 @@ export default function App() {
   // --- 處理函式 ---
   const handleRoomAuth = async (e) => {
     e.preventDefault();
-    if (!roomId.trim() || !roomPassword.trim()) {
+    const currentRoomId = roomId.trim();
+    if (!currentRoomId || !roomPassword.trim()) {
       showNotification("請輸入完整房間資訊", "error");
       return;
     }
-    await syncWithGoogleSheet('read', roomId.trim());
+
+    if (!db) {
+      showNotification("系統尚未準備完成，請稍後再試", "error");
+      return;
+    }
+
+    setIsAuthenticating(true);
+    const pwHash = roomPassword.length === 64 ? roomPassword : await hashPassword(roomPassword);
+
+    try {
+      const roomDocRef = doc(db, 'artifacts', appId, 'public', 'data', 'camp_rooms', currentRoomId);
+      const docSnap = await getDoc(roomDocRef);
+
+      if (docSnap.exists()) {
+        const data = docSnap.data();
+        if (data.pw !== pwHash) {
+          showNotification("密碼錯誤，無法登入", "error");
+          setIsRoomAuthenticated(false);
+          localStorage.removeItem('camp_room_id');
+          localStorage.removeItem('camp_room_password');
+          setIsAuthenticating(false);
+          return;
+        }
+
+        // 登入成功
+        setIsRoomAuthenticated(true);
+        setItems(data.items || []);
+        setUsers(data.users || []);
+        setDaysCount(data.daysCount || 2);
+        if (data.activeMeals) setActiveMeals(data.activeMeals);
+        if (data.mealDishNames) setMealDishNames(data.mealDishNames);
+        if (data.hiddenMeals) setHiddenMeals(data.hiddenMeals);
+        showNotification(`成功進入房間：${currentRoomId}`);
+      } else {
+        // 房間不存在，直接創建
+        setIsRoomAuthenticated(true);
+        showNotification("新房間創建成功！", "success");
+        await setDoc(roomDocRef, {
+          pw: pwHash,
+          items: INITIAL_ITEMS,
+          users: INITIAL_USERS,
+          daysCount: 2,
+          lastUpdated: new Date().toISOString()
+        });
+        setItems(INITIAL_ITEMS);
+        setUsers(INITIAL_USERS);
+        setDaysCount(2);
+      }
+
+      localStorage.setItem('camp_room_id', currentRoomId);
+      localStorage.setItem('camp_room_password', pwHash);
+    } catch (error) {
+      if (import.meta.env.DEV) console.error("房間驗證錯誤:", error);
+      showNotification("連線失敗，請檢查網路或權限", "error");
+    } finally {
+      setIsAuthenticating(false);
+    }
   };
 
   const handleLogin = (name) => {
@@ -648,7 +546,7 @@ export default function App() {
               />
               <KeyRound className="absolute left-4 top-4 text-stone-300" size={20} />
             </div>
-            <Button variant="emerald" className="w-full py-4 text-lg" loading={isSheetSyncing} disabled={isSheetSyncing}>
+            <Button variant="emerald" className="w-full py-4 text-lg" loading={isAuthenticating} disabled={isAuthenticating}>
               進入房間 / 創建房間
             </Button>
           </form>
