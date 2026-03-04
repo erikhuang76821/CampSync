@@ -17,6 +17,7 @@ import {
   Utensils as DinnerIcon,
   Sunrise,
   Check,
+  ClipboardList,
   UserCircle2,
   Wallet,
   Receipt,
@@ -635,6 +636,7 @@ export default function App() {
 
           <nav className="hidden md:flex items-center gap-1 bg-black/10 p-1 rounded-xl">
             <DesktopNavLink active={activeTab === 'list'} onClick={() => setActiveTab('list')} icon={<ListIcon size={18} />} label="清單" />
+            <DesktopNavLink active={activeTab === 'checklist'} onClick={() => setActiveTab('checklist')} icon={<ClipboardList size={18} />} label="我應該帶的" />
             <DesktopNavLink active={activeTab === 'expenses'} onClick={() => setActiveTab('expenses')} icon={<Wallet size={18} />} label="費用" />
             <DesktopNavLink active={activeTab === 'sync'} onClick={() => setActiveTab('sync')} icon={<RefreshCw size={18} />} label="同步" />
           </nav>
@@ -1020,11 +1022,25 @@ export default function App() {
             </div>
           </div>
         )}
+        {/* ==== 個人清單分頁 ==== */}
+        {activeTab === 'checklist' && (
+          <div className="space-y-6 max-w-2xl mx-auto pb-24">
+            <PersonalChecklist
+              items={items}
+              currentUser={currentUser}
+              users={users}
+              hiddenMeals={hiddenMeals}
+              togglePacked={togglePacked}
+            />
+          </div>
+        )}
+
       </main>
 
       {/* 手機版導覽列 */}
       <nav className="md:hidden fixed bottom-0 left-0 right-0 bg-white/90 backdrop-blur-lg border-t pb-safe z-40 h-16 flex justify-around items-center">
         <MobileNavLink active={activeTab === 'list'} onClick={() => setActiveTab('list')} icon={<LayoutGrid size={24} />} label="清單" color="text-emerald-600" />
+        <MobileNavLink active={activeTab === 'checklist'} onClick={() => setActiveTab('checklist')} icon={<ClipboardList size={24} />} label="我的" color="text-indigo-600" />
         <MobileNavLink active={activeTab === 'expenses'} onClick={() => setActiveTab('expenses')} icon={<Receipt size={24} />} label="費用" color="text-teal-600" />
         <MobileNavLink active={activeTab === 'sync'} onClick={() => setActiveTab('sync')} icon={<RefreshCw size={24} />} label="同步" color="text-indigo-600" />
       </nav>
@@ -1161,5 +1177,84 @@ const ItemRow = ({ item, users, actions }) => {
         </div>
       )}
     </Card>
+  );
+};
+
+const PersonalChecklist = ({ items, currentUser, hiddenMeals, togglePacked }) => {
+  if (!currentUser) {
+    return (
+      <Card className="text-center p-8 bg-white border-dashed">
+        <div className="text-stone-400 mb-2">請先加入或選擇你的名字</div>
+      </Card>
+    );
+  }
+
+  const myItems = items.filter(i => i.assignedTo === currentUser);
+
+  const isHiddenFood = (item) => {
+    if (item.type !== 'food') return false;
+    return (hiddenMeals[item.dayIndex] || []).includes(item.mealId);
+  };
+
+  const cancelledItems = myItems.filter(isHiddenFood);
+  const activeItems = myItems.filter(i => !isHiddenFood(i));
+  const unpackedItems = activeItems.filter(i => !i.packed);
+  const packedItems = activeItems.filter(i => i.packed);
+
+  const Section = ({ title, list, icon, emptyMsg, className: cx = "" }) => (
+    <div className={`space-y-3 ${cx}`}>
+      <h3 className="font-bold text-stone-600 flex items-center gap-2 border-b pb-2">
+        {icon} {title} <span className="text-stone-400 font-normal text-sm">({list.length})</span>
+      </h3>
+      {list.length > 0 ? (
+        <div className="space-y-2">
+          {list.map(item => (
+            <div key={item.id} className="flex items-center gap-3 bg-white p-3 rounded-xl shadow-sm border border-stone-100">
+              <button onClick={() => togglePacked(item.id)} className={`shrink-0 transition-colors ${item.packed ? 'text-emerald-500' : 'text-stone-300 hover:text-stone-400'}`}>
+                {item.packed ? <CheckCircle2 size={24} /> : <Circle size={24} />}
+              </button>
+              <div className="flex flex-col">
+                <span className={`font-bold ${item.packed ? 'line-through text-stone-500' : 'text-stone-800'}`}>
+                  {item.name} {item.quantity > 1 && <span className="text-xs text-stone-400">x{item.quantity}</span>}
+                </span>
+                <span className="text-[10px] text-stone-400 flex items-center gap-1">
+                  {item.type === 'food' ? <Utensils size={10} /> : <Tent size={10} />}
+                  {item.type === 'food' ? `Day ${item.dayIndex + 1} 伙食` : (item.category || '裝備')}
+                </span>
+              </div>
+            </div>
+          ))}
+        </div>
+      ) : (
+        <div className="text-sm text-stone-400 italic text-center py-4 bg-stone-50 rounded-xl">{emptyMsg}</div>
+      )}
+    </div>
+  );
+
+  return (
+    <div className="space-y-8 animate-in fade-in slide-in-from-bottom-4 duration-500">
+      <div className="bg-gradient-to-r from-indigo-500 to-indigo-600 rounded-2xl p-6 text-white shadow-lg relative overflow-hidden">
+        <div className="relative z-10 flex items-center gap-4">
+          <div className="bg-white/20 p-3 rounded-full backdrop-blur-md">
+            <ClipboardList size={32} />
+          </div>
+          <div>
+            <h2 className="text-2xl font-black">嗨，{currentUser}！</h2>
+            <p className="text-indigo-100/90 text-sm mt-1">
+              這是你專屬的準備清單，目前有 <strong className="text-white">{unpackedItems.length}</strong> 項任務待完成。
+            </p>
+          </div>
+        </div>
+        <div className="absolute -right-4 -bottom-4 opacity-10 blur-[2px] pointer-events-none transform -rotate-12 scale-150">
+          <ClipboardList size={120} />
+        </div>
+      </div>
+
+      <div className="px-2 space-y-8 pb-10">
+        <Section title="待準備 (未勾選)" list={unpackedItems} icon={<Circle size={18} className="text-amber-500" />} emptyMsg="太棒了！目前沒有待準備的項目。" />
+        <Section title="已準備 (已勾選)" list={packedItems} icon={<CheckCircle2 size={18} className="text-emerald-500" />} emptyMsg="尚無已準備的項目。" className="opacity-80" />
+        <Section title="已取消 (隱藏餐別)" list={cancelledItems} icon={<X size={18} className="text-red-400" />} emptyMsg="無取消項目。" className="opacity-50 grayscale" />
+      </div>
+    </div>
   );
 };
