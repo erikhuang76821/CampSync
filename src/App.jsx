@@ -648,15 +648,15 @@ export default function App() {
           </nav>
 
           <div className="flex items-center gap-3">
-            <div
+            <button
               className="flex items-center gap-2 bg-black/20 pl-2 pr-3 py-1 rounded-full cursor-pointer hover:bg-black/30 transition-all active:scale-95"
-              onClick={() => { if (window.confirm('登出房間？資料將保持同步')) { setIsRoomAuthenticated(false); setCurrentUser(null); } }}
+              onClick={() => { if (window.confirm('登出房間？資料將保持同步')) { localStorage.removeItem('camp_room_id'); localStorage.removeItem('camp_room_password'); localStorage.removeItem('camp_current_user'); setIsRoomAuthenticated(false); setCurrentUser(null); } }}
             >
               <div className="w-6 h-6 rounded-full bg-white/20 flex items-center justify-center">
                 <User size={14} />
               </div>
-              <span className="text-xs font-bold">{currentUser}</span>
-            </div>
+              <span className="text-xs font-bold text-white">{currentUser}</span>
+            </button>
           </div>
         </div>
       </header>
