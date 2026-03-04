@@ -120,6 +120,7 @@ export default function App() {
   const fileInputRef = useRef(null);
   const lastLocalWrite = useRef(0);  // 最近一次本地寫入時間戳
   const isLocalUpdate = useRef(false); // Firebase onSnapshot 迴圈保護
+  const lastPollData = useRef('');     // 上次 poll 拿到的 data 字串（用於 diff）
   // --- 狀態管理 ---
   const [activeTab, setActiveTab] = useState('list');
   const [listMode, setListMode] = useState('gear');
@@ -226,60 +227,46 @@ export default function App() {
   useEffect(() => {
     if (!gasUrl || !roomId || !isRoomAuthenticated || !roomPassword || !currentUser) return;
 
-    const POLL_INTERVAL = 5000; // 5 秒
+    const POLL_INTERVAL = 2000; // 2 秒
 
     const pollFromGAS = async () => {
-      // 如果剛寫入不到 2 秒，跳過此次 poll 避免覆蓋自己的資料
-      const sinceLastWrite = Date.now() - lastLocalWrite.current;
-      if (sinceLastWrite < 2000) {
-        console.log(`[GAS Poll] 跳過 — 距上次寫入 ${sinceLastWrite}ms`);
-        return;
-      }
+      // 剛寫入不到 1.5 秒，跳過避免覆蓋自己的資料
+      if (Date.now() - lastLocalWrite.current < 1500) return;
 
       const pwHash = roomPassword.length === 64 ? roomPassword : await hashPassword(roomPassword);
       try {
-        console.log(`[GAS Poll] 發送請求... roomId=${roomId}`);
         const response = await fetch(`${gasUrl}?roomId=${encodeURIComponent(roomId)}&pw=${encodeURIComponent(pwHash)}`);
         const result = await response.json();
-        console.log(`[GAS Poll] 回應 status=${result.status}, hasData=${!!result.data}`);
 
         if (result.status === 'success' && result.data) {
-          const parsed = JSON.parse(result.data);
+          // 資料字串完全相同 → 無變更，跳過（不觸發 re-render，不影響編輯中的 UI）
+          if (result.data === lastPollData.current) return;
+          lastPollData.current = result.data;
 
-          // 只有遠端資料比本地寫入更新時才套用
-          const remoteUpdated = parsed.lastUpdated ? new Date(parsed.lastUpdated).getTime() : 0;
-          console.log(`[GAS Poll] remoteUpdated=${remoteUpdated}, lastLocalWrite=${lastLocalWrite.current}, diff=${remoteUpdated - lastLocalWrite.current}ms, remoteItems=${(parsed.items || []).length}`);
-          if (remoteUpdated > lastLocalWrite.current) {
-            console.log(`[GAS Poll] ✅ 套用遠端資料 (${(parsed.items || []).length} items)`);
-            setItems(parsed.items || []);
-            const remoteUsers = parsed.users || [];
-            if (currentUser && !remoteUsers.includes(currentUser)) {
-              setUsers([...remoteUsers, currentUser]);
-            } else {
-              setUsers(remoteUsers);
-            }
-            setDaysCount(parsed.daysCount || 2);
-            if (parsed.activeMeals) setActiveMeals(parsed.activeMeals);
-            if (parsed.mealDishNames) setMealDishNames(parsed.mealDishNames);
-            if (parsed.hiddenMeals) setHiddenMeals(parsed.hiddenMeals);
+          const parsed = JSON.parse(result.data);
+          setItems(parsed.items || []);
+          const remoteUsers = parsed.users || [];
+          if (currentUser && !remoteUsers.includes(currentUser)) {
+            setUsers([...remoteUsers, currentUser]);
           } else {
-            console.log(`[GAS Poll] ⏭️ 跳過 — 遠端資料不比本地新`);
+            setUsers(remoteUsers);
           }
+          setDaysCount(parsed.daysCount || 2);
+          if (parsed.activeMeals) setActiveMeals(parsed.activeMeals);
+          if (parsed.mealDishNames) setMealDishNames(parsed.mealDishNames);
+          if (parsed.hiddenMeals) setHiddenMeals(parsed.hiddenMeals);
         } else if (result.status === 'wrong_password') {
-          // 密碼被更改，登出
           clearInterval(gasPollTimer.current);
           setIsRoomAuthenticated(false);
           localStorage.removeItem('camp_room_id');
           localStorage.removeItem('camp_room_password');
-        } else {
-          console.log(`[GAS Poll] 未處理的狀態:`, result.status);
         }
       } catch (e) {
-        console.warn('[GAS Poll] 失敗:', e);
+        // 靜默失敗
+        if (import.meta.env.DEV) console.warn('[GAS Poll]', e);
       }
     };
 
-    // 立即 poll 一次，然後每 5 秒輪詢
     pollFromGAS();
     gasPollTimer.current = setInterval(pollFromGAS, POLL_INTERVAL);
 
@@ -306,6 +293,9 @@ export default function App() {
       hiddenMeals: extraState.hiddenMeals ?? hiddenMeals,
       lastUpdated: new Date().toISOString()
     };
+
+    // 同步更新 lastPollData，這樣下次 poll 回來如果是自己寫的相同資料就會跳過
+    lastPollData.current = JSON.stringify(payload);
 
     // V-10 fix: GAS sync debounce 500ms
     if (gasUrl && roomId && isRoomAuthenticated) {
