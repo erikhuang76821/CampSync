@@ -23,6 +23,8 @@ import {
   List as ListIcon,
   FileSpreadsheet,
   RefreshCw,
+  Download,
+  Upload,
   KeyRound,
   Filter
 } from 'lucide-react';
@@ -128,6 +130,12 @@ export default function App() {
   // --- 狀態管理 ---
   const [activeTab, setActiveTab] = useState('list');
   const [listMode, setListMode] = useState('gear');
+
+  // 模板狀態
+  const [savedTemplates, setSavedTemplates] = useState(() => {
+    try { return JSON.parse(localStorage.getItem('camp_gear_templates') || '[]'); } catch { return []; }
+  });
+  const [templateName, setTemplateName] = useState('');
 
   // 資料狀態
   const [items, setItems] = useState(INITIAL_ITEMS);
@@ -375,6 +383,34 @@ export default function App() {
   };
 
   const deleteItem = (id) => saveData(items.filter(item => item.id !== id), users, daysCount);
+
+  // --- 模板函式 ---
+  const exportTemplate = () => {
+    if (!templateName.trim()) { showNotification('請輸入模板名稱', 'error'); return; }
+    const gearItems = items.filter(i => i.type === 'gear').map(({ name, category, quantity }) => ({ name, category, quantity }));
+    if (gearItems.length === 0) { showNotification('目前沒有裝備可匯出', 'error'); return; }
+    const newTemplates = [...savedTemplates, { name: templateName.trim(), items: gearItems, createdAt: new Date().toISOString() }];
+    setSavedTemplates(newTemplates);
+    localStorage.setItem('camp_gear_templates', JSON.stringify(newTemplates));
+    setTemplateName('');
+    showNotification(`模板「${templateName.trim()}」已儲存（${gearItems.length} 項）`);
+  };
+  const importTemplate = (template) => {
+    if (!window.confirm(`載入「${template.name}」？將覆蓋目前所有裝備項目`)) return;
+    const foodItems = items.filter(i => i.type === 'food');
+    const newGear = template.items.map((t, idx) => ({
+      id: Date.now() + idx, type: 'gear', name: t.name, category: t.category,
+      quantity: t.quantity, assignedTo: null, packed: false, cost: 0, splitMembers: null
+    }));
+    saveData([...foodItems, ...newGear], users, daysCount);
+    showNotification(`已載入「${template.name}」（${newGear.length} 項裝備）`);
+  };
+  const deleteTemplate = (idx) => {
+    const newTemplates = savedTemplates.filter((_, i) => i !== idx);
+    setSavedTemplates(newTemplates);
+    localStorage.setItem('camp_gear_templates', JSON.stringify(newTemplates));
+    showNotification('模板已刪除');
+  };
   const togglePacked = (id) => saveData(items.map(i => i.id === id ? { ...i, packed: !i.packed } : i), users, daysCount);
   const updateAssignment = (id, user) => saveData(items.map(i => i.id === id ? { ...i, assignedTo: user === "unassigned" ? null : user } : i), users, daysCount);
   const updateCost = (id, cost) => saveData(items.map(i => i.id === id ? { ...i, cost: parseInt(cost) || 0 } : i), users, daysCount);
@@ -588,6 +624,46 @@ export default function App() {
                       <Button variant="emerald" onClick={addGearItem} className="w-full py-3">加入清單</Button>
                     </div>
                   </Card>
+
+                  {/* 裝備模板 */}
+                  <Card className="p-5 border-l-4 border-l-stone-300">
+                    <h3 className="font-bold text-lg mb-4 text-stone-700 flex items-center gap-2"><Download className="w-5 h-5 text-stone-500" /> 裝備模板</h3>
+                    <div className="space-y-3">
+                      <div className="flex gap-2">
+                        <input
+                          type="text" placeholder="模板名稱..."
+                          className="flex-1 p-3 bg-stone-50 border border-stone-200 rounded-xl outline-none focus:ring-2 focus:ring-emerald-500 transition-all text-sm"
+                          value={templateName} onChange={(e) => setTemplateName(e.target.value)}
+                          onKeyDown={(e) => e.key === 'Enter' && exportTemplate()}
+                        />
+                        <Button variant="secondary" onClick={exportTemplate} className="text-sm whitespace-nowrap">
+                          <Upload size={14} /> 匯出
+                        </Button>
+                      </div>
+                      {savedTemplates.length > 0 && (
+                        <div className="space-y-2 pt-2 border-t border-stone-100">
+                          <p className="text-xs text-stone-400 font-bold">已存模板</p>
+                          {savedTemplates.map((tpl, idx) => (
+                            <div key={idx} className="flex items-center justify-between bg-stone-50 p-3 rounded-xl">
+                              <div className="flex items-center gap-2">
+                                <Backpack size={14} className="text-emerald-500" />
+                                <span className="text-sm font-bold text-stone-700">{tpl.name}</span>
+                                <span className="text-xs text-stone-400">({tpl.items.length} 項)</span>
+                              </div>
+                              <div className="flex items-center gap-1">
+                                <button onClick={() => importTemplate(tpl)} className="px-3 py-1 text-xs font-bold text-emerald-600 bg-emerald-50 rounded-lg hover:bg-emerald-100 transition-all active:scale-95">
+                                  <Download size={12} className="inline mr-1" />載入
+                                </button>
+                                <button onClick={() => deleteTemplate(idx)} className="p-1 text-stone-300 hover:text-red-500 transition-colors">
+                                  <Trash2 size={14} />
+                                </button>
+                              </div>
+                            </div>
+                          ))}
+                        </div>
+                      )}
+                    </div>
+                  </Card>
                 </div>
 
                 <div className="space-y-6 order-2 lg:order-2">
@@ -716,6 +792,40 @@ export default function App() {
                   }}>新增</Button>
                 </div>
               </Card>
+
+              {/* 費用明細 */}
+              {settlementData.expenseItems.length > 0 && (
+                <Card className="p-5">
+                  <h3 className="font-bold text-lg mb-4 flex items-center gap-2"><Receipt size={20} className="text-teal-500" /> 費用明細</h3>
+                  <div className="space-y-3">
+                    {settlementData.expenseItems.map(item => {
+                      const splitTo = (item.splitMembers && item.splitMembers.length > 0) ? item.splitMembers : users;
+                      const perPerson = splitTo.length > 0 ? Math.round(item.cost / splitTo.length) : 0;
+                      return (
+                        <div key={item.id} className="p-3 bg-stone-50 rounded-xl space-y-2">
+                          <div className="flex items-center justify-between">
+                            <div className="flex items-center gap-2">
+                              <span className="font-bold text-stone-800">{item.name}</span>
+                              {item.quantity > 1 && <span className="text-xs text-stone-400">x{item.quantity}</span>}
+                            </div>
+                            <span className="font-bold text-teal-600">${item.cost}</span>
+                          </div>
+                          <div className="flex flex-wrap items-center gap-1 text-xs">
+                            <span className="text-stone-400">付款:</span>
+                            <span className="font-bold text-stone-600 bg-white px-2 py-0.5 rounded-md border border-stone-200">{item.assignedTo || '未指派'}</span>
+                            <span className="text-stone-300 mx-1">│</span>
+                            <span className="text-stone-400">分攤:</span>
+                            {splitTo.map(u => (
+                              <span key={u} className="font-bold text-stone-600 bg-white px-2 py-0.5 rounded-md border border-stone-200">{u}</span>
+                            ))}
+                            <span className="text-stone-400 ml-1">(每人 ${perPerson})</span>
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+                </Card>
+              )}
             </div>
           </div>
         )}
@@ -843,24 +953,75 @@ const LoginScreen = ({ users, onLogin, notification }) => {
   );
 };
 
-const ItemRow = ({ item, users, actions }) => (
-  <Card className={`p-3 ${item.packed ? 'bg-stone-50 opacity-70' : 'bg-white'}`}>
-    <div className="flex items-center gap-3">
-      <button onClick={() => actions.togglePacked(item.id)} className={item.packed ? 'text-emerald-500' : 'text-stone-300'}>
-        {item.packed ? <CheckCircle2 size={24} /> : <Circle size={24} />}
-      </button>
-      <span className={`flex-1 font-bold ${item.packed ? 'line-through' : ''}`}>{item.name} {item.quantity > 1 && <span className="text-xs text-stone-400">x{item.quantity}</span>}</span>
-      <div className="flex items-center gap-2">
-        <div className="flex items-center bg-stone-50 px-2 py-1 rounded-lg border border-stone-100">
-          <span className="text-[10px] text-stone-400 mr-1">$</span>
-          <input type="number" className="w-12 bg-transparent text-right text-sm font-bold outline-none" value={item.cost || ''} onChange={(e) => actions.updateCost(item.id, e.target.value)} placeholder="0" />
+const ItemRow = ({ item, users, actions }) => {
+  const [showSplit, setShowSplit] = useState(false);
+  const effectiveSplit = (item.splitMembers && item.splitMembers.length > 0) ? item.splitMembers : users;
+  const isCustomSplit = item.splitMembers && item.splitMembers.length > 0 && item.splitMembers.length < users.length;
+
+  const toggleMember = (member) => {
+    const current = (item.splitMembers && item.splitMembers.length > 0) ? [...item.splitMembers] : [...users];
+    const idx = current.indexOf(member);
+    if (idx >= 0) {
+      if (current.length <= 1) return; // 至少保留 1 人
+      current.splice(idx, 1);
+    } else {
+      current.push(member);
+    }
+    actions.updateSplitMembers(item.id, current);
+  };
+
+  return (
+    <Card className={`p-3 ${item.packed ? 'bg-stone-50 opacity-70' : 'bg-white'}`}>
+      <div className="flex items-center gap-3">
+        <button onClick={() => actions.togglePacked(item.id)} className={item.packed ? 'text-emerald-500' : 'text-stone-300'}>
+          {item.packed ? <CheckCircle2 size={24} /> : <Circle size={24} />}
+        </button>
+        <span className={`flex-1 font-bold ${item.packed ? 'line-through' : ''}`}>{item.name} {item.quantity > 1 && <span className="text-xs text-stone-400">x{item.quantity}</span>}</span>
+        <div className="flex items-center gap-2">
+          <div className="flex items-center bg-stone-50 px-2 py-1 rounded-lg border border-stone-100">
+            <span className="text-[10px] text-stone-400 mr-1">$</span>
+            <input type="number" className="w-12 bg-transparent text-right text-sm font-bold outline-none" value={item.cost || ''} onChange={(e) => actions.updateCost(item.id, e.target.value)} placeholder="0" />
+          </div>
+          <select className="text-xs border rounded-lg p-1.5 bg-white font-bold text-stone-600 outline-none focus:ring-1 focus:ring-emerald-500" value={item.assignedTo || ""} onChange={(e) => actions.updateAssignment(item.id, e.target.value)}>
+            <option value="">未指派</option>
+            {users.map(u => <option key={u} value={u}>{u}</option>)}
+          </select>
+          <button onClick={() => actions.deleteItem(item.id)} className="p-2 text-stone-300 hover:text-red-500 transition-colors"><Trash2 size={16} /></button>
         </div>
-        <select className="text-xs border rounded-lg p-1.5 bg-white font-bold text-stone-600 outline-none focus:ring-1 focus:ring-emerald-500" value={item.assignedTo || ""} onChange={(e) => actions.updateAssignment(item.id, e.target.value)}>
-          <option value="">未指派</option>
-          {users.map(u => <option key={u} value={u}>{u}</option>)}
-        </select>
-        <button onClick={() => actions.deleteItem(item.id)} className="p-2 text-stone-300 hover:text-red-500 transition-colors"><Trash2 size={16} /></button>
       </div>
-    </div>
-  </Card>
-);
+      {/* 分攤 UI — 有費用時顯示 */}
+      {item.cost > 0 && (
+        <div className="mt-2 pt-2 border-t border-stone-100">
+          <button
+            onClick={() => setShowSplit(!showSplit)}
+            className={`text-xs font-bold flex items-center gap-1.5 px-2 py-1 rounded-lg transition-all ${isCustomSplit ? 'text-amber-600 bg-amber-50' : 'text-stone-400 hover:bg-stone-50'}`}
+          >
+            <Users size={12} />
+            分攤: {isCustomSplit ? `${effectiveSplit.length}/${users.length} 人` : '全員'}
+            <span className="text-[10px]">{showSplit ? '▲' : '▼'}</span>
+          </button>
+          {showSplit && (
+            <div className="flex flex-wrap gap-1.5 mt-2 animate-in fade-in">
+              {users.map(u => {
+                const included = effectiveSplit.includes(u);
+                return (
+                  <button
+                    key={u}
+                    onClick={() => toggleMember(u)}
+                    className={`px-3 py-1 text-xs font-bold rounded-lg border transition-all active:scale-95 ${included
+                      ? 'bg-emerald-50 border-emerald-300 text-emerald-700'
+                      : 'bg-stone-50 border-stone-200 text-stone-400 line-through'
+                      }`}
+                  >
+                    {included ? <Check size={10} className="inline mr-1" /> : <X size={10} className="inline mr-1" />}
+                    {u}
+                  </button>
+                );
+              })}
+            </div>
+          )}
+        </div>
+      )}
+    </Card>
+  );
+};
