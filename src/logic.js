@@ -24,13 +24,19 @@ export const calculateDebts = (balances) => {
 };
 
 // --- 結算資料計算 ---
-export const computeSettlement = (items, users) => {
+export const computeSettlement = (items, users, hiddenMeals = {}) => {
+    // 建立隱藏餐別索引
+    const isHiddenFood = (item) => {
+        if (item.type !== 'food') return false;
+        return (hiddenMeals[item.dayIndex] || []).includes(item.mealId);
+    };
+
     const balances = {};
     users.forEach(u => balances[u] = 0);
     let totalExpense = 0;
     const expenseItems = [];
     items.forEach(item => {
-        if (item.cost > 0) {
+        if (item.cost > 0 && !isHiddenFood(item)) {
             expenseItems.push(item);
             totalExpense += item.cost;
             const payer = item.assignedTo;

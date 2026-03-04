@@ -112,6 +112,30 @@ describe('computeSettlement', () => {
         // splitMembers=[] → fallback 全員
         expect(result.balances['傑克']).toBe(200);
     });
+
+    it('排除隱藏餐別 (hiddenMeals) 的 food 項目', () => {
+        const items = [
+            { id: 1, type: 'food', name: '早餐麵包', cost: 150, assignedTo: '傑克', dayIndex: 0, mealId: 'breakfast', splitMembers: null },
+            { id: 2, type: 'food', name: '晚餐烤肉', cost: 600, assignedTo: '愛麗絲', dayIndex: 0, mealId: 'dinner', splitMembers: null },
+            { id: 3, type: 'gear', name: '瓦斯', cost: 150, assignedTo: '湯姆', splitMembers: null },
+        ];
+        // 隱藏 Day 0 的 breakfast
+        const hiddenMeals = { 0: ['breakfast'] };
+        const result = computeSettlement(items, users, hiddenMeals);
+
+        // 總花費不包含早餐的 150，應為 600 + 150 = 750
+        expect(result.totalExpense).toBe(750);
+        // 記錄中的費用項目應只有兩筆
+        expect(result.expenseItems).toHaveLength(2);
+
+        // 分攤：每人 750 / 3 = 250
+        // 傑克付了 0（被排除），應均攤 -250 → 餘額 -250
+        expect(result.balances['傑克']).toBe(-250);
+        // 愛麗絲付了 600，應均攤 -250 → 餘額 350
+        expect(result.balances['愛麗絲']).toBe(350);
+        // 湯姆付了 150，應均攤 -250 → 餘額 -100
+        expect(result.balances['湯姆']).toBe(-100);
+    });
 });
 
 // ============================================================

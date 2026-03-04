@@ -519,31 +519,8 @@ export default function App() {
     saveData(newItems, newUsers, daysCount);
   };
 
-  // --- 衍生資料 ---
   const settlementData = useMemo(() => {
-    // 建立隱藏餐別索引
-    const isHiddenFood = (item) => {
-      if (item.type !== 'food') return false;
-      return (hiddenMeals[item.dayIndex] || []).includes(item.mealId);
-    };
-    const balances = {};
-    users.forEach(u => balances[u] = 0);
-    let totalExpense = 0;
-    const expenseItems = [];
-    items.forEach(item => {
-      if (item.cost > 0 && !isHiddenFood(item)) {
-        expenseItems.push(item);
-        totalExpense += item.cost;
-        const payer = item.assignedTo;
-        if (payer && users.includes(payer)) balances[payer] += item.cost;
-        const beneficiaries = (item.splitMembers && item.splitMembers.length > 0) ? item.splitMembers.filter(u => users.includes(u)) : users;
-        if (beneficiaries.length > 0) {
-          const share = item.cost / beneficiaries.length;
-          beneficiaries.forEach(b => balances[b] -= share);
-        }
-      }
-    });
-    return { balances, totalExpense, transactions: calculateDebts(balances), expenseItems };
+    return computeSettlement(items, users, hiddenMeals);
   }, [items, users, hiddenMeals]);
 
   const groupedGear = useMemo(() => {
