@@ -136,7 +136,7 @@ export default function App() {
   const [mealDishNames, setMealDishNames] = useState({});
   const [hiddenMeals, setHiddenMeals] = useState({}); // { dayIndex: [mealId, ...] }
   const [currentUser, setCurrentUser] = useState(null);
-  const [showUnpackedOnly, setShowUnpackedOnly] = useState(false);
+  const [filterMode, setFilterMode] = useState('all'); // 'all' | 'unpacked' | 'unassigned'
 
   // 認證狀態
   const [roomId, setRoomId] = useState('');
@@ -530,11 +530,11 @@ export default function App() {
       items: items.filter(i => {
         const isGear = (i.type === 'gear' || !i.type);
         const isInCat = i.category === cat;
-        const filterMatch = showUnpackedOnly ? !i.packed : true;
+        const filterMatch = filterMode === 'unpacked' ? !i.packed : filterMode === 'unassigned' ? !i.assignedTo : true;
         return isGear && isInCat && filterMatch;
       })
     })).filter(g => g.items.length > 0);
-  }, [items, showUnpackedOnly]);
+  }, [items, filterMode]);
 
   // --- 畫面渲染 ---
 
@@ -596,19 +596,25 @@ export default function App() {
   }
 
   const FilterSwitch = () => (
-    <div className="flex items-center justify-between px-1 mb-4">
+    <div className="flex items-center justify-between px-2 py-2 bg-stone-50 rounded-xl">
       <div className="flex items-center gap-2">
         <button
-          onClick={() => setShowUnpackedOnly(false)}
-          className={`px-3 py-1.5 rounded-full text-xs font-bold transition-all ${!showUnpackedOnly ? 'bg-stone-800 text-white shadow-sm' : 'bg-stone-100 text-stone-400 hover:bg-stone-200'}`}
+          onClick={() => setFilterMode('all')}
+          className={`px-3 py-1.5 rounded-full text-xs font-bold transition-all ${filterMode === 'all' ? 'bg-stone-800 text-white shadow-sm' : 'bg-stone-100 text-stone-400 hover:bg-stone-200'}`}
         >
           全部
         </button>
         <button
-          onClick={() => setShowUnpackedOnly(true)}
-          className={`px-3 py-1.5 rounded-full text-xs font-bold transition-all ${showUnpackedOnly ? 'bg-amber-500 text-white shadow-sm' : 'bg-stone-100 text-stone-400 hover:bg-stone-200'}`}
+          onClick={() => setFilterMode('unpacked')}
+          className={`px-3 py-1.5 rounded-full text-xs font-bold transition-all ${filterMode === 'unpacked' ? 'bg-amber-500 text-white shadow-sm' : 'bg-stone-100 text-stone-400 hover:bg-stone-200'}`}
         >
-          只看未準備
+          未準備
+        </button>
+        <button
+          onClick={() => setFilterMode('unassigned')}
+          className={`px-3 py-1.5 rounded-full text-xs font-bold transition-all ${filterMode === 'unassigned' ? 'bg-indigo-500 text-white shadow-sm' : 'bg-stone-100 text-stone-400 hover:bg-stone-200'}`}
+        >
+          未指派
         </button>
       </div>
       <div className="text-[10px] text-stone-400 font-bold uppercase flex items-center gap-1">
@@ -636,7 +642,7 @@ export default function App() {
 
           <nav className="hidden md:flex items-center gap-1 bg-black/10 p-1 rounded-xl">
             <DesktopNavLink active={activeTab === 'list'} onClick={() => setActiveTab('list')} icon={<ListIcon size={18} />} label="清單" />
-            <DesktopNavLink active={activeTab === 'checklist'} onClick={() => setActiveTab('checklist')} icon={<ClipboardList size={18} />} label="我應該帶的" />
+            <DesktopNavLink active={activeTab === 'checklist'} onClick={() => setActiveTab('checklist')} icon={<ClipboardList size={18} />} label="個人清單" />
             <DesktopNavLink active={activeTab === 'expenses'} onClick={() => setActiveTab('expenses')} icon={<Wallet size={18} />} label="費用" />
             <DesktopNavLink active={activeTab === 'sync'} onClick={() => setActiveTab('sync')} icon={<RefreshCw size={18} />} label="同步" />
           </nav>
@@ -817,7 +823,7 @@ export default function App() {
                           const mealItems = items.filter(i => {
                             const isFood = i.type === 'food';
                             const isCorrectMeal = i.dayIndex === dayIndex && i.mealId === meal.id;
-                            const filterMatch = showUnpackedOnly ? !i.packed : true;
+                            const filterMatch = filterMode === 'unpacked' ? !i.packed : filterMode === 'unassigned' ? !i.assignedTo : true;
                             return isFood && isCorrectMeal && filterMatch;
                           });
 
