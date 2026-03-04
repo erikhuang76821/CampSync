@@ -65,7 +65,7 @@ const hashPassword = async (pw) => {
 };
 
 // --- 常數設定 ---
-const DEFAULT_GAS_URL = import.meta.env.VITE_GAS_URL || "https://script.google.com/macros/s/AKfycbwHuZ8Ha5MdVVQ_ybU5-ezNAFABmdhLb-48BCGnAX_BZjk3_Nif7DEDj8iQhy1ES656/exec";
+const DEFAULT_GAS_URL = import.meta.env.VITE_GAS_URL || "https://script.google.com/macros/s/AKfycbxYWG2vawPdPrmGdGy0MMajz2uTBtw_oKMYoeMFmFdv-0c5_vffYC2b80uW-ebR-Zc/exec";
 const MEAL_TYPES = [
   { id: 'breakfast', label: '早餐', icon: <Sunrise className="w-4 h-4" /> },
   { id: 'lunch', label: '午餐', icon: <Sun className="w-4 h-4" /> },
