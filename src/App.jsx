@@ -36,7 +36,12 @@ import { getFirestore, doc, setDoc, onSnapshot } from "firebase/firestore";
 import { calculateDebts, INITIAL_CATEGORIES } from './logic';
 
 // --- 全域設定 ---
-const firebaseConfig = typeof window.__firebase_config !== 'undefined' ? JSON.parse(window.__firebase_config) : null;
+let firebaseConfig = null;
+try {
+  firebaseConfig = typeof window.__firebase_config !== 'undefined' ? JSON.parse(window.__firebase_config) : null;
+} catch (e) {
+  if (import.meta.env.DEV) console.error('Firebase config parse error:', e);
+}
 const appId = typeof window.__app_id !== 'undefined' ? window.__app_id : 'camp-sync-default';
 
 // 初始化 Firebase
@@ -47,12 +52,20 @@ if (firebaseConfig) {
     auth = getAuth(app);
     db = getFirestore(app);
   } catch (e) {
-    console.error("Firebase 初始化錯誤:", e);
+    if (import.meta.env.DEV) console.error("Firebase 初始化錯誤:", e);
   }
 }
 
+// --- 密碼 Hash 工具 ---
+const hashPassword = async (pw) => {
+  const encoder = new TextEncoder();
+  const data = encoder.encode(pw);
+  const hashBuffer = await crypto.subtle.digest('SHA-256', data);
+  return Array.from(new Uint8Array(hashBuffer)).map(b => b.toString(16).padStart(2, '0')).join('');
+};
+
 // --- 常數設定 ---
-const DEFAULT_GAS_URL = "https://script.google.com/macros/s/AKfycbwHuZ8Ha5MdVVQ_ybU5-ezNAFABmdhLb-48BCGnAX_BZjk3_Nif7DEDj8iQhy1ES656/exec";
+const DEFAULT_GAS_URL = import.meta.env.VITE_GAS_URL || "https://script.google.com/macros/s/AKfycbwHuZ8Ha5MdVVQ_ybU5-ezNAFABmdhLb-48BCGnAX_BZjk3_Nif7DEDj8iQhy1ES656/exec";
 const MEAL_TYPES = [
   { id: 'breakfast', label: '早餐', icon: <Sunrise className="w-4 h-4" /> },
   { id: 'lunch', label: '午餐', icon: <Sun className="w-4 h-4" /> },
@@ -148,9 +161,8 @@ export default function App() {
     if (savedUser) setCurrentUser(savedUser);
     if (savedRoomId && savedRoomPw) {
       setRoomId(savedRoomId);
-      setRoomPassword(savedRoomPw);
-      // 樂觀驗證：先放行，背景靜默驗證
-      setIsRoomAuthenticated(true);
+      setRoomPassword(savedRoomPw); // savedRoomPw 已是 hash
+      setIsRoomAuthenticated(true); // 樂觀驗證
     }
 
     if (!auth) return;
@@ -162,7 +174,7 @@ export default function App() {
           await signInAnonymously(auth);
         }
       } catch (e) {
-        console.error("Auth 初始化錯誤:", e);
+        if (import.meta.env.DEV) console.error("Auth 初始化錯誤:", e);
       }
     };
     initAuth();
@@ -189,23 +201,28 @@ export default function App() {
         setDaysCount(data.daysCount || 2);
       }
     }, (error) => {
-      console.error("Firebase 同步錯誤:", error);
+      if (import.meta.env.DEV) console.error("Firebase 同步錯誤:", error);
     });
     return () => unsubscribe();
   }, [isRoomAuthenticated, firebaseUser, roomId, currentUser]);
 
   // --- 資料存取輔助 ---
+  const gasSyncTimer = useRef(null);
   const saveData = (newItems, newUsers, newDaysCount) => {
     setItems(newItems);
     setUsers(newUsers);
     setDaysCount(newDaysCount);
 
+    // V-10 fix: GAS sync debounce 500ms
     if (gasUrl && roomId && isRoomAuthenticated) {
-      syncWithGoogleSheet('write', roomId, {
-        items: newItems,
-        users: newUsers,
-        daysCount: newDaysCount
-      });
+      clearTimeout(gasSyncTimer.current);
+      gasSyncTimer.current = setTimeout(() => {
+        syncWithGoogleSheet('write', roomId, {
+          items: newItems,
+          users: newUsers,
+          daysCount: newDaysCount
+        });
+      }, 500);
     }
 
     if (db && roomId && firebaseUser) {
@@ -222,20 +239,22 @@ export default function App() {
       const roomDocRef = doc(db, 'artifacts', appId, 'public', 'data', 'camp_rooms', roomId);
       await setDoc(roomDocRef, { items: i, users: u, daysCount: d, lastUpdated: new Date().toISOString() }, { merge: true });
     } catch (e) {
-      console.error("雲端存檔錯誤:", e);
+      if (import.meta.env.DEV) console.error("雲端存檔錯誤:", e);
     }
   };
 
-  // --- Google Sheet 同步邏輯 (優化效能：先驗證密碼再撈取大資料) ---
+  // --- Google Sheet 同步邏輯 (密碼全程 hash 傳輸) ---
   const syncWithGoogleSheet = async (action, targetRoomId, dataObj = null) => {
     if (!gasUrl) return;
     setIsSheetSyncing(true);
+    // 判斷 roomPassword 是否已是 hash（長度 64 = SHA-256 hex）
+    const pwHash = roomPassword.length === 64 ? roomPassword : await hashPassword(roomPassword);
 
     try {
       if (action === 'write') {
         const payload = {
           roomId: targetRoomId,
-          pw: roomPassword,
+          pw: pwHash,
           data: JSON.stringify(dataObj || { items, users, daysCount })
         };
         await fetch(gasUrl, {
@@ -245,8 +264,12 @@ export default function App() {
           body: JSON.stringify(payload)
         });
       } else if (action === 'read') {
-        // 優化：將密碼帶入參數，GAS 應只在密碼正確時回傳 Data (B 欄)，否則只回傳狀態
-        const response = await fetch(`${gasUrl}?roomId=${targetRoomId}&pw=${encodeURIComponent(roomPassword)}`);
+        // V-02 fix: 改用 POST 傳送驗證請求，密碼不再出現在 URL
+        const response = await fetch(gasUrl, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ roomId: targetRoomId, pw: pwHash, action: 'auth_read' })
+        });
         const result = await response.json();
 
         // 後端驗證密碼失敗
@@ -272,13 +295,13 @@ export default function App() {
               setUsers(parsed.users || []);
               setDaysCount(parsed.daysCount || 2);
             } catch (e) {
-              console.error("解析資料失敗", e);
+              if (import.meta.env.DEV) console.error("解析資料失敗", e);
             }
           }
 
           showNotification(`成功進入房間：${targetRoomId}`);
           localStorage.setItem('camp_room_id', targetRoomId);
-          localStorage.setItem('camp_room_password', roomPassword);
+          localStorage.setItem('camp_room_password', pwHash); // V-01 fix: 存 hash
           return true;
         } else if (result.status === "not_found") {
           // 房間不存在，允許創建新房間
@@ -286,7 +309,7 @@ export default function App() {
           showNotification("新房間創建成功！", "success");
 
           localStorage.setItem('camp_room_id', targetRoomId);
-          localStorage.setItem('camp_room_password', roomPassword);
+          localStorage.setItem('camp_room_password', pwHash); // V-01 fix: 存 hash
 
           // 初始化新房間資料並同步回雲端
           syncWithGoogleSheet('write', targetRoomId, {
@@ -298,7 +321,7 @@ export default function App() {
         }
       }
     } catch (error) {
-      console.error("Sheet 同步錯誤:", error);
+      if (import.meta.env.DEV) console.error("Sheet 同步錯誤:", error);
       showNotification("同步連線失敗，請檢查網路", "error");
     } finally {
       setIsSheetSyncing(false);
@@ -406,6 +429,8 @@ export default function App() {
   const uploadTemplateFromFile = (e) => {
     const file = e.target.files?.[0];
     if (!file) return;
+    // V-09 fix: 檔案大小限制 100KB
+    if (file.size > 102400) { showNotification('檔案超過 100KB 限制', 'error'); e.target.value = ''; return; }
     const reader = new FileReader();
     reader.onload = (ev) => {
       try {
