@@ -264,12 +264,8 @@ export default function App() {
           body: JSON.stringify(payload)
         });
       } else if (action === 'read') {
-        // V-02 fix: 改用 POST 傳送驗證請求，密碼不再出現在 URL
-        const response = await fetch(gasUrl, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ roomId: targetRoomId, pw: pwHash, action: 'auth_read' })
-        });
+        // GAS 限制：doPost 走 302 redirect 無法跨域讀回應，改用 GET + hash（非明文密碼）
+        const response = await fetch(`${gasUrl}?roomId=${encodeURIComponent(targetRoomId)}&pw=${encodeURIComponent(pwHash)}`);
         const result = await response.json();
 
         // 後端驗證密碼失敗
