@@ -1,177 +1,74 @@
-# CampSync
+# CampSync 露營同步助理 - 使用手冊指南 ⛺️
 
-> 多人即時同步的露營裝備與伙食清單管理工具  
-> **Live:** [erikhuang76821.github.io/CampSync](https://erikhuang76821.github.io/CampSync/)
-
----
-
-## Tech Stack
-
-| Layer | Technology | Purpose |
-|-------|-----------|---------|
-| **Frontend** | React 19 + Vite 7 | SPA 框架 & 建置工具 |
-| **Styling** | TailwindCSS 4 | 原子化 CSS |
-| **Realtime DB** | Firebase Firestore | 多人即時同步 |
-| **Auth** | Firebase Anonymous Auth | 匿名登入取得 UID |
-| **Backend** | Google Apps Script (GAS) | Google Sheet CRUD、密碼驗證 |
-| **Storage** | Google Sheets | 持久化資料儲存 |
-| **Hosting** | GitHub Pages (gh-pages) | 靜態網站部署 |
-| **PWA** | manifest.json + meta tags | 安裝至桌面、standalone 模式 |
-| **Testing** | Vitest 4 | 單元測試（27 tests） |
-| **Icons** | Lucide React | SVG icon 組件 |
+歡迎使用 **CampSync**！本系統專為露營、登山與多日戶外活動設計，提供即時的裝備清單協作、伙食規劃及費用自動結算功能，讓準備工作輕鬆不漏接。
 
 ---
 
-## Architecture
+## 🚀 快速開始
 
-```
-┌─────────────────────────────────────────────────────┐
-│  Browser (React SPA)                                │
-│  ┌───────────┐  ┌──────────┐  ┌──────────────────┐  │
-│  │ App.jsx   │  │ logic.js │  │ localStorage     │  │
-│  │ (UI+State)│  │ (Pure fn)│  │ (Templates/Auth) │  │
-│  └─────┬─────┘  └──────────┘  └──────────────────┘  │
-│        │                                            │
-│   ┌────┴────┐        ┌─────────┐                    │
-│   │ SHA-256 │        │ Debounce│                    │
-│   │ Hash PW │        │ (500ms) │                    │
-│   └────┬────┘        └────┬────┘                    │
-└────────┼──────────────────┼─────────────────────────┘
-         │                  │
-    ┌────▼────┐        ┌────▼─────────────┐
-    │  GAS    │        │  Firestore       │
-    │ doGet/  │        │  (Realtime Sync) │
-    │ doPost  │        │  Anonymous Auth  │
-    └────┬────┘        └──────────────────┘
-         │
-    ┌────▼────┐
-    │ Google  │
-    │ Sheets  │
-    └─────────┘
-```
+### 1. 建立或加入房間
+* **進入系統**：首頁將提示輸入「房間代號」與「房間密碼」。
+* **建立房間**：若輸入的代號不存在，系統會自動建立新房間並設置密碼。
+* **加入房間**：與露營夥伴分享代號與密碼，即可進入同一個房間，資料將**即時同步**（註：即使無網路狀態下，修改的資料也會在恢復網路連線時自動更新）。
 
-### Data Flow
-
-1. **登入** → 前端 SHA-256 hash 密碼 → GAS `doGet` 驗證（hash 比對）
-2. **寫入** → 前端 state 更新 → Firestore `setDoc` + GAS `doPost`（debounce 500ms）
-3. **同步** → Firestore `onSnapshot` 即時推送變更到所有連線用戶
-4. **模板** → `localStorage` 快取 + JSON 檔案匯入匯出
+### 2. 登入自己的名字
+* 進入房間後，點擊畫面上方的「🙋‍♂️ 加入成員」。
+* 輸入你的暱稱（例如：傑克、小明），即可成為該房間的一員。接下來你就可以開始認領裝備與分攤費用囉！
 
 ---
 
-## Features — Implemented ✅
+## 🎒 單元一：裝備準備 (Gear)
 
-### Core
-- [x] 房間制登入（Room ID + 密碼）
-- [x] 多人即時同步（Firestore + GAS 雙通道）
-- [x] 裝備清單 CRUD（分類、數量、分配、打勾）
-- [x] 伙食清單 CRUD（依天數×餐別矩陣）
-- [x] 費用結算（自動計算誰欠誰多少）
-- [x] 成員管理（新增、移除、切換使用者）
+負責統整團隊共用的公裝（如：帳篷、天幕、爐具）與私裝提醒。
 
-### 分攤機制
-- [x] 逐項設定分攤成員（checkbox toggle）
-- [x] 自訂分攤時琥珀色標示（如「2/3 人」）
-- [x] 至少保留 1 人參與分攤
-- [x] 費用明細頁（付款人、分攤人、每人金額）
-
-### 裝備模板
-- [x] 匯出目前裝備為命名模板（localStorage）
-- [x] 載入模板覆蓋裝備（食材不受影響）
-- [x] 多模板並存管理（載入、刪除）
-- [x] JSON 檔案下載（`.json` 格式）
-- [x] JSON 檔案上傳匯入（100KB 限制）
-
-### PWA
-- [x] `manifest.json`（standalone 模式）
-- [x] Apple 裝置 meta tags
-- [x] Theme color（Emerald `#047857`）
-- [x] App icon（192x192, 512x512）
-
-### 安全性
-- [x] 密碼 SHA-256 hash（前端 `crypto.subtle` + GAS `Utilities.computeDigest`）
-- [x] localStorage 存 hash（不存明文）
-- [x] GAS `doPost` 寫入前驗證密碼
-- [x] 舊明文密碼自動遷移至 hash
-- [x] GAS URL 移至環境變數（`.env`）
-- [x] CSP（Content-Security-Policy）header
-- [x] `console.error` 限開發模式
-- [x] GAS sync debounce 500ms
-- [x] 模板上傳 100KB 限制
-
-### 程式碼品質
-- [x] 純邏輯抽離至 `logic.js`（可測試）
-- [x] 27 個單元測試（Vitest，< 15ms）
-- [x] 未使用 import 清理
-- [x] `useRef` 取代 `document.getElementById`
-- [x] Emerald 統一色系
+1. **新增裝備**：
+   * 在頁面頂部選擇「分類」（如：睡眠裝備、廚房炊具）。
+   * 輸入裝備名稱與數量，點擊「➕」新增。
+2. **認領與打勾 (打包)**：
+   * 在裝備列表的下拉選單中，可以選擇「**誰負責攜帶**」。
+   * 當你已經將該物品放入背包，請點擊最左側的「圓圈」將其打勾 🟢。
+3. **儲存/載入模板**：
+   * 如果這是一份標準的露營清單，你可以點擊「儲存目前的裝備列表為...」，將其存為模板。下次新建房間時，一鍵載入，不需重新輸入。
+   * 模板亦支援下載為 `.json` 檔案備份，並可以透過「匯入檔案」分享給其他團體。
 
 ---
 
-## Planned — To-Do 📋
+## 🍳 單元二：伙食規劃 (Food)
 
-### 功能擴展
-- [ ] Service Worker（離線支援 / `vite-plugin-pwa`）
-- [ ] 裝備照片上傳（Firebase Storage）
-- [ ] 匯出費用報表為 PDF / CSV
-- [ ] 多語系支援（i18n）
-- [ ] 房間歷史紀錄（過往行程回顧）
-- [ ] 天氣 API 整合（自動建議裝備）
+輕鬆編排多日的早、午、晚、下午茶、宵夜，以及對應的食材採買分配。
 
-### 安全性強化
-- [ ] Firestore Security Rules 限制（需 Firebase Console 部署）
-- [ ] 密碼加鹽（salt + hash）
-- [ ] 登入失敗速率限制（GAS 端）
-- [ ] JWT Token 取代密碼重傳
-
-### 效能優化
-- [ ] React.memo / useMemo 微調
-- [ ] 虛擬列表（大量裝備時）
-- [ ] GAS 分頁讀取（大資料量）
-- [ ] Firestore 欄位級 merge（減少傳輸量）
-
-### DevOps
-- [ ] GitHub Actions CI（自動測試 + 部署）
-- [ ] Lighthouse CI（效能 / PWA 分數追蹤）
-- [ ] E2E 測試（Playwright）
+1. **天數與餐別調整**：
+   * 點擊「天數」旁的 `+` / `-` 按鈕，可以自由調整露營天數（如：三天兩夜就設定 Day 1、Day 2、Day 3）。
+   * **刪除餐別**：如果該天不需要某餐（如：Day 1 沒有早餐），點擊該餐別右側的 `✕` 即可隱藏該餐別卡片。
+   * **復原餐別**：若想加回隱藏的餐別，點擊 Date 標題旁邊的 `+ 餐別` 按鈕即可。
+2. **菜色命名**：
+   * 在餐別（如「晚餐」）文字上**點一下**，即可為該餐命名（例如：輸入「紅燒牛肉麵」），字體會加粗顯示於餐別旁。
+3. **新增與拖曳食材**：
+   * 在該餐別下方輸入食材名稱並點擊 `+`。
+   * **拖曳更換餐別**：若臨時決定將食材改到另一餐煮，可透過**長按名稱/勾選區域並拖曳**，即可將食材移動到另一餐。
+   *(註：金額、人名、分攤選項區域設計為不可拖曳，以防止操作誤觸)*
 
 ---
 
-## Project Structure
+## 💰 單元三：費用與結算 (Expenses)
 
-```
-CampSync/
-├── index.html          # 入口 HTML（PWA meta + CSP）
-├── vite.config.js      # Vite 設定（base: /CampSync/）
-├── package.json        # 依賴 & scripts
-├── .env                # 環境變數（GAS URL）← .gitignore
-├── .gitignore
-├── GAS.md              # Google Apps Script 後端程式碼
-├── public/
-│   ├── manifest.json   # PWA manifest
-│   ├── icon-192.png
-│   └── icon-512.png
-└── src/
-    ├── main.jsx        # React 入口
-    ├── App.jsx         # 主元件（UI + 狀態 + 同步邏輯）
-    ├── logic.js        # 純邏輯函式（結算、分攤、模板驗證）
-    ├── logic.test.js   # 單元測試（27 tests）
-    └── index.css       # TailwindCSS 入口
-```
+活動結束後最麻煩的算錢，交給 CampSync 自動結算！
+
+1. **紀錄花費**：
+   * 任何裝備或伙食，只要有人先墊錢，請在該項目的「`$`」符號旁輸入金額。系統限制金額只能為 0 或正數。
+2. **設定分攤人員 (Split)**：
+   * 預設情況下，只要有輸入金額，系統就會自動將該筆費用「**全員均攤**」。
+   * 若這筆費用（例如：啤酒）只有部分人喝，請點擊該項目下方的「**▼ 分攤: 全員**」，將不喝酒的人取消勾選 ❌，系統就會只計算被勾選的人 🟢。
+   * *(註：若餐別被隱藏，則該餐別內的食材費用將「不參與」最後的費用分攤與結算。)*
+3. **查看結算報表**：
+   * 切換至「**費用**」分頁。
+   * **第一部分**：列出目前總共花了多少錢，以及每一筆有金額的項目明細。
+   * **第二部分**：最終結算表。系統會自動利用最佳化算法，告訴你**「誰該給誰多少錢」**，直接照著列表轉帳即可，完全不用按計算機！
 
 ---
 
-## Scripts
+## 💡 小技巧 (Tips)
 
-```bash
-npm run dev      # 開發伺服器
-npm run build    # 生產建置
-npm run preview  # 預覽生產版本
-npm test         # 執行單元測試（vitest run）
-```
-
----
-
-## License
-
-MIT
+* **過濾顯示**：點擊「僅顯示未打包」，方便在出發前做最後衝刺檢查，已經打包好的項目會被隱藏。
+* **隨時切換身份**：你可以點擊右上角你的名字來切換帳號，方便幫同行但沒手機的朋友代為操作。
+* **PWA 支援**：使用手機瀏覽器（如 Safari 或 Chrome）開啟本系統，點擊「加入主畫面」，即可獲得類似原生 App 的全螢幕體驗！
