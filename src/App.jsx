@@ -504,7 +504,7 @@ export default function App() {
 
   const togglePacked = (id) => saveData(items.map(i => i.id === id ? { ...i, packed: !i.packed } : i), users, daysCount);
   const updateAssignment = (id, user) => saveData(items.map(i => i.id === id ? { ...i, assignedTo: user === "unassigned" ? null : user } : i), users, daysCount);
-  const updateCost = (id, cost) => saveData(items.map(i => i.id === id ? { ...i, cost: parseInt(cost) || 0 } : i), users, daysCount);
+  const updateCost = (id, cost) => saveData(items.map(i => i.id === id ? { ...i, cost: Math.max(0, parseInt(cost) || 0) } : i), users, daysCount);
   const updateQuantity = (id, newQty) => saveData(items.map(i => i.id === id ? { ...i, quantity: Math.max(1, parseInt(newQty) || 1) } : i), users, daysCount);
   const updateSplitMembers = (id, members) => saveData(items.map(i => i.id === id ? { ...i, splitMembers: (members && members.length === users.length) ? null : members } : i), users, daysCount);
   const addUser = (name) => { if (name && !users.includes(name)) { saveData(items, [...users, name], daysCount); showNotification(`歡迎 ${name}！`); } };
@@ -877,13 +877,12 @@ export default function App() {
                                 {mealItems.length > 0 ? mealItems.map(item => (
                                   <div key={item.id}
                                     draggable
-                                    onDragStart={(e) => { e.dataTransfer.setData('text/plain', String(item.id)); e.currentTarget.style.opacity = '0.4'; }}
-                                    onDragEnd={(e) => { e.currentTarget.style.opacity = '1'; }}
-                                    onTouchStart={(e) => {
-                                      const timer = setTimeout(() => { e.currentTarget.dataset.dragging = 'true'; e.currentTarget.style.opacity = '0.4'; }, 500);
-                                      e.currentTarget.dataset.touchTimer = timer;
+                                    onDragStart={(e) => {
+                                      // 互動元素區域不觸發拖曳
+                                      if (e.target.closest('[data-no-drag]')) { e.preventDefault(); return; }
+                                      e.dataTransfer.setData('text/plain', String(item.id)); e.currentTarget.style.opacity = '0.4';
                                     }}
-                                    onTouchEnd={(e) => { clearTimeout(e.currentTarget.dataset.touchTimer); e.currentTarget.style.opacity = '1'; delete e.currentTarget.dataset.dragging; }}
+                                    onDragEnd={(e) => { e.currentTarget.style.opacity = '1'; }}
                                     className="cursor-grab active:cursor-grabbing"
                                   >
                                     <ItemRow item={item} users={users} currentUser={currentUser} compact={true} actions={{ togglePacked, updateAssignment, updateCost, deleteItem, updateSplitMembers, updateQuantity }} />
@@ -1139,10 +1138,10 @@ const ItemRow = ({ item, users, actions }) => {
           {item.packed ? <CheckCircle2 size={24} /> : <Circle size={24} />}
         </button>
         <span className={`flex-1 font-bold ${item.packed ? 'line-through' : ''}`}>{item.name} {item.quantity > 1 && <span className="text-xs text-stone-400">x{item.quantity}</span>}</span>
-        <div className="flex items-center gap-2">
+        <div className="flex items-center gap-2" data-no-drag>
           <div className="flex items-center bg-stone-50 px-2 py-1 rounded-lg border border-stone-100">
             <span className="text-[10px] text-stone-400 mr-1">$</span>
-            <input type="number" className="w-12 bg-transparent text-right text-sm font-bold outline-none" value={item.cost || ''} onChange={(e) => actions.updateCost(item.id, e.target.value)} placeholder="0" />
+            <input type="number" min="0" className="w-12 bg-transparent text-right text-sm font-bold outline-none" value={item.cost || ''} onChange={(e) => actions.updateCost(item.id, e.target.value)} placeholder="0" />
           </div>
           <select className="text-xs border rounded-lg p-1.5 bg-white font-bold text-stone-600 outline-none focus:ring-1 focus:ring-emerald-500" value={item.assignedTo || ""} onChange={(e) => actions.updateAssignment(item.id, e.target.value)}>
             <option value="">未指派</option>
