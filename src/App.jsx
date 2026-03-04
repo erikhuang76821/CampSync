@@ -960,21 +960,17 @@ export default function App() {
                     </div>
                     <div className="text-xl font-black text-stone-800 font-mono tracking-wider">{roomId}</div>
                   </div>
-                  <Button
-                    variant="emerald"
-                    className="w-full"
-                    onClick={() => syncWithGoogleSheet('write', roomId)}
-                    loading={isSheetSyncing}
-                  >
-                    <RefreshCw size={18} className={isSheetSyncing ? 'animate-spin' : ''} /> 強制上傳目前資料
-                  </Button>
-                  <div className="flex justify-center">
-                    <button
-                      onClick={() => { if (window.confirm("確定要重新從雲端更新資料嗎？")) syncWithGoogleSheet('read', roomId); }}
-                      className="text-xs text-stone-400 hover:text-emerald-600 underline underline-offset-4 decoration-stone-200"
-                    >
-                      手動從雲端同步
-                    </button>
+
+                  <div className="bg-emerald-50 text-emerald-700 p-4 rounded-xl border border-emerald-100 flex items-start gap-3">
+                    <div className="w-8 h-8 rounded-full bg-emerald-100 flex items-center justify-center shrink-0">
+                      <RefreshCw size={16} className="text-emerald-600 animate-spin-slow" />
+                    </div>
+                    <div>
+                      <h4 className="font-bold text-sm">即時同步中</h4>
+                      <p className="text-xs text-emerald-600/80 mt-1">
+                        系統已連接至 Firebase 雲端資料庫。所有變更都會在 0.5 秒內自動同步給所有連線中的成員，無需手動點擊儲存。
+                      </p>
+                    </div>
                   </div>
                 </div>
               </Card>
