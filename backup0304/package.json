@@ -1,0 +1,39 @@
+{
+  "name": "campsync",
+  "version": "1.0.0",
+  "description": "",
+  "scripts": {
+    "dev": "vite",
+    "build": "vite build",
+    "preview": "vite preview",
+    "test": "vitest run"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/erikhuang76821/CampSync.git"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "type": "commonjs",
+  "bugs": {
+    "url": "https://github.com/erikhuang76821/CampSync/issues"
+  },
+  "homepage": "https://github.com/erikhuang76821/CampSync#readme",
+  "dependencies": {
+    "firebase": "^12.10.0",
+    "lucide-react": "^0.576.0",
+    "react": "^19.2.4",
+    "react-dom": "^19.2.4"
+  },
+  "devDependencies": {
+    "@tailwindcss/vite": "^4.2.1",
+    "@testing-library/jest-dom": "^6.9.1",
+    "@testing-library/react": "^16.3.2",
+    "@vitejs/plugin-react": "^5.1.4",
+    "jsdom": "^28.1.0",
+    "tailwindcss": "^4.2.1",
+    "vite": "^7.3.1",
+    "vitest": "^4.0.18"
+  }
+}
