@@ -1005,6 +1005,20 @@ export default function App() {
               hiddenMeals={hiddenMeals}
               togglePacked={togglePacked}
             />
+            {/* 自訂廣告 Banner */}
+            <a
+              href="https://www.gametower.com.tw/Games/FreePlay/Mj/star31/"
+              target="_blank"
+              rel="noopener noreferrer"
+              className="block w-full rounded-2xl overflow-hidden shadow-md hover:shadow-lg transition-shadow active:scale-[0.99]"
+            >
+              <img
+                src="https://scontent.ftpe7-3.fna.fbcdn.net/v/t39.30808-6/604864352_1387132383198410_5010737380258136415_n.jpg?_nc_cat=103&ccb=1-7&_nc_sid=2a1932&_nc_ohc=sL3Hk1yOevwQ7kNvwETtyJ7&_nc_oc=Admbb98486LJBV3xwXbHz-V8BfoY9ZGDmUKp5EqUIwrbRSBlL9yuhNvHCfzTlqSg3PA&_nc_zt=23&_nc_ht=scontent.ftpe7-3.fna&_nc_gid=oID4fhb9Kl8-QuCA0FwxoQ&_nc_ss=8&oh=00_AfxxFlBt-xKxAFM8VUaOYeNq3RrhrfyE51Gs9qqXXrhVBg&oe=69ADC18A"
+                alt="廣告"
+                className="w-full object-cover"
+                style={{ maxHeight: 120 }}
+              />
+            </a>
             <AdBanner adSlot="1234567890" adClient="ca-pub-7253456466690152" />
           </div>
         )}
