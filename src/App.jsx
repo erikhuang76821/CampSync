@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useMemo } from 'react';
+import React, { useState, useEffect, useMemo, useRef } from 'react';
 import {
   Tent,
   Utensils,
@@ -15,27 +15,14 @@ import {
   Moon,
   Utensils as DinnerIcon,
   Sunrise,
-  CalendarPlus,
-  CalendarX,
-  Cloud,
-  Wifi,
-  WifiOff,
-  LogOut,
-  Link as LinkIcon,
-  Calculator,
-  ArrowRight,
   Check,
   UserCircle2,
   Wallet,
   Receipt,
   LayoutGrid,
   List as ListIcon,
-  Database,
-  Download,
-  Upload,
   FileSpreadsheet,
   RefreshCw,
-  Lock,
   KeyRound,
   Filter
 } from 'lucide-react';
@@ -134,6 +121,10 @@ const calculateDebts = (balances) => {
 
 // --- 主應用程式元件 ---
 export default function App() {
+  // --- Refs ---
+  const expNameRef = useRef(null);
+  const expCostRef = useRef(null);
+  const expPayerRef = useRef(null);
   // --- 狀態管理 ---
   const [activeTab, setActiveTab] = useState('list');
   const [listMode, setListMode] = useState('gear');
@@ -448,8 +439,8 @@ export default function App() {
         )}
         <Card className="w-full max-w-md p-8 space-y-8 shadow-xl">
           <div className="flex justify-center">
-            <div className="w-16 h-16 bg-indigo-100 rounded-2xl flex items-center justify-center shadow-lg shadow-indigo-50">
-              <Database className="w-8 h-8 text-indigo-600" />
+            <div className="w-16 h-16 bg-emerald-100 rounded-2xl flex items-center justify-center shadow-lg shadow-emerald-50">
+              <Tent className="w-8 h-8 text-emerald-600" />
             </div>
           </div>
           <div>
@@ -461,7 +452,7 @@ export default function App() {
               <input
                 type="text"
                 placeholder="房間 ID (例如: CAMP2024)"
-                className="w-full p-4 pl-12 bg-stone-50 border border-stone-200 rounded-2xl outline-none focus:ring-2 focus:ring-indigo-500 font-bold uppercase"
+                className="w-full p-4 pl-12 bg-stone-50 border border-stone-200 rounded-2xl outline-none focus:ring-2 focus:ring-emerald-500 font-bold uppercase"
                 value={roomId}
                 onChange={(e) => setRoomId(e.target.value.toUpperCase())}
               />
@@ -471,13 +462,13 @@ export default function App() {
               <input
                 type="password"
                 placeholder="房間密碼"
-                className="w-full p-4 pl-12 bg-stone-50 border border-stone-200 rounded-2xl outline-none focus:ring-2 focus:ring-indigo-500 font-bold"
+                className="w-full p-4 pl-12 bg-stone-50 border border-stone-200 rounded-2xl outline-none focus:ring-2 focus:ring-emerald-500 font-bold"
                 value={roomPassword}
                 onChange={(e) => setRoomPassword(e.target.value)}
               />
               <KeyRound className="absolute left-4 top-4 text-stone-300" size={20} />
             </div>
-            <Button variant="indigo" className="w-full py-4 text-lg" loading={isSheetSyncing} disabled={isSheetSyncing}>
+            <Button variant="emerald" className="w-full py-4 text-lg" loading={isSheetSyncing} disabled={isSheetSyncing}>
               進入房間 / 創建房間
             </Button>
           </form>
@@ -709,19 +700,19 @@ export default function App() {
               </div>
             </div>
             <div className="lg:col-span-7 space-y-6">
-              <Card className="p-5 border-t-4 border-t-teal-500">
+              <Card className="p-5 border-l-4 border-l-teal-500">
                 <h3 className="font-bold text-lg mb-4 flex items-center gap-2"><Plus size={20} className="text-teal-500" /> 新增額外費用</h3>
                 <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
-                  <input type="text" id="expN" placeholder="項目" className="col-span-2 md:col-span-1 p-2 bg-stone-50 border rounded-xl" />
-                  <input type="number" id="expC" placeholder="金額" className="p-2 bg-stone-50 border rounded-xl" />
-                  <select id="expP" className="p-2 bg-stone-50 border rounded-xl" defaultValue={currentUser}>
+                  <input ref={expNameRef} type="text" placeholder="項目" className="col-span-2 md:col-span-1 p-2 bg-stone-50 border rounded-2xl" />
+                  <input ref={expCostRef} type="number" placeholder="金額" className="p-2 bg-stone-50 border rounded-2xl" />
+                  <select ref={expPayerRef} className="p-2 bg-stone-50 border rounded-2xl" defaultValue={currentUser}>
                     {users.map(u => <option key={u} value={u}>{u}</option>)}
                   </select>
                   <Button variant="teal" onClick={() => {
-                    const n = document.getElementById('expN').value, c = document.getElementById('expC').value, p = document.getElementById('expP').value;
+                    const n = expNameRef.current.value, c = expCostRef.current.value, p = expPayerRef.current.value;
                     if (n && c) addExpenseItem(n, c, p);
-                    document.getElementById('expN').value = '';
-                    document.getElementById('expC').value = '';
+                    expNameRef.current.value = '';
+                    expCostRef.current.value = '';
                   }}>新增</Button>
                 </div>
               </Card>
@@ -807,47 +798,50 @@ const MobileNavLink = ({ active, onClick, icon, label, color }) => (
   </button>
 );
 
-const LoginScreen = ({ users, onLogin, notification }) => (
-  <div className="min-h-screen bg-stone-50 flex items-center justify-center p-6 text-center">
-    {notification && (
-      <div className={`fixed top-10 left-1/2 -translate-x-1/2 z-50 px-6 py-3 rounded-2xl shadow-xl text-white font-medium ${notification.type === 'error' ? 'bg-red-500' : 'bg-stone-800'}`}>
-        {notification.msg}
-      </div>
-    )}
-    <Card className="w-full max-w-md p-8 space-y-8 shadow-xl">
-      <div className="w-20 h-20 bg-emerald-100 rounded-3xl flex items-center justify-center mx-auto -rotate-6 shadow-lg shadow-emerald-50">
-        <UserCircle2 className="w-10 h-10 text-emerald-600" />
-      </div>
-      <div>
-        <h1 className="text-3xl font-black text-stone-800">你是誰？</h1>
-        <p className="text-stone-500 mt-2">請選擇現有成員或輸入新名字</p>
-      </div>
-      <div className="flex flex-wrap gap-2 justify-center">
-        {users.map(u => (
-          <button
-            key={u}
-            onClick={() => onLogin(u)}
-            className="px-5 py-2.5 bg-white border border-stone-200 rounded-xl font-bold text-stone-600 hover:border-emerald-500 hover:text-emerald-600 hover:shadow-md transition-all active:scale-95"
-          >
-            {u}
-          </button>
-        ))}
-      </div>
-      <div className="relative py-2">
-        <div className="absolute inset-0 flex items-center"><span className="w-full border-t border-stone-200"></span></div>
-        <div className="relative flex justify-center text-xs uppercase font-bold"><span className="bg-white px-3 text-stone-300">或新加入</span></div>
-      </div>
-      <input
-        type="text"
-        id="lI"
-        placeholder="輸入你的名字..."
-        className="w-full p-4 border rounded-2xl text-center font-bold text-lg outline-none focus:ring-2 focus:ring-emerald-500"
-        onKeyDown={(e) => e.key === 'Enter' && onLogin(e.target.value)}
-      />
-      <Button variant="emerald" className="w-full py-4 text-lg" onClick={() => onLogin(document.getElementById('lI').value)}>進入清單</Button>
-    </Card>
-  </div>
-);
+const LoginScreen = ({ users, onLogin, notification }) => {
+  const inputRef = useRef(null);
+  return (
+    <div className="min-h-screen bg-stone-50 flex items-center justify-center p-6 text-center">
+      {notification && (
+        <div className={`fixed top-10 left-1/2 -translate-x-1/2 z-50 px-6 py-3 rounded-2xl shadow-xl text-white font-medium ${notification.type === 'error' ? 'bg-red-500' : 'bg-stone-800'}`}>
+          {notification.msg}
+        </div>
+      )}
+      <Card className="w-full max-w-md p-8 space-y-8 shadow-xl">
+        <div className="w-20 h-20 bg-emerald-100 rounded-3xl flex items-center justify-center mx-auto -rotate-6 shadow-lg shadow-emerald-50">
+          <UserCircle2 className="w-10 h-10 text-emerald-600" />
+        </div>
+        <div>
+          <h1 className="text-3xl font-black text-stone-800">你是誰？</h1>
+          <p className="text-stone-500 mt-2">請選擇現有成員或輸入新名字</p>
+        </div>
+        <div className="flex flex-wrap gap-2 justify-center">
+          {users.map(u => (
+            <button
+              key={u}
+              onClick={() => onLogin(u)}
+              className="px-5 py-2.5 bg-white border border-stone-200 rounded-xl font-bold text-stone-600 hover:border-emerald-500 hover:text-emerald-600 hover:shadow-md transition-all active:scale-95"
+            >
+              {u}
+            </button>
+          ))}
+        </div>
+        <div className="relative py-2">
+          <div className="absolute inset-0 flex items-center"><span className="w-full border-t border-stone-200"></span></div>
+          <div className="relative flex justify-center text-xs uppercase font-bold"><span className="bg-white px-3 text-stone-300">或新加入</span></div>
+        </div>
+        <input
+          type="text"
+          ref={inputRef}
+          placeholder="輸入你的名字..."
+          className="w-full p-4 border rounded-2xl text-center font-bold text-lg outline-none focus:ring-2 focus:ring-emerald-500"
+          onKeyDown={(e) => e.key === 'Enter' && onLogin(e.target.value)}
+        />
+        <Button variant="emerald" className="w-full py-4 text-lg" onClick={() => onLogin(inputRef.current?.value)}>進入清單</Button>
+      </Card>
+    </div>
+  );
+};
 
 const ItemRow = ({ item, users, actions }) => (
   <Card className={`p-3 ${item.packed ? 'bg-stone-50 opacity-70' : 'bg-white'}`}>
