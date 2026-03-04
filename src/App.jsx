@@ -6,6 +6,7 @@ import {
   Circle,
   User,
   Plus,
+  Minus,
   Trash2,
   Users,
   Backpack,
@@ -130,6 +131,8 @@ export default function App() {
   const [items, setItems] = useState(INITIAL_ITEMS);
   const [users, setUsers] = useState(INITIAL_USERS);
   const [daysCount, setDaysCount] = useState(2);
+  const [activeMeals, setActiveMeals] = useState(MEAL_TYPES.map(m => m.id));
+  const [mealDishNames, setMealDishNames] = useState({});
   const [currentUser, setCurrentUser] = useState(null);
   const [showUnpackedOnly, setShowUnpackedOnly] = useState(false);
 
@@ -199,6 +202,8 @@ export default function App() {
           setUsers(remoteUsers);
         }
         setDaysCount(data.daysCount || 2);
+        if (data.activeMeals) setActiveMeals(data.activeMeals);
+        if (data.mealDishNames) setMealDishNames(data.mealDishNames);
       }
     }, (error) => {
       if (import.meta.env.DEV) console.error("Firebase 同步錯誤:", error);
@@ -208,36 +213,43 @@ export default function App() {
 
   // --- 資料存取輔助 ---
   const gasSyncTimer = useRef(null);
-  const saveData = (newItems, newUsers, newDaysCount) => {
+  const saveData = (newItems, newUsers, newDaysCount, extraState = {}) => {
     setItems(newItems);
     setUsers(newUsers);
     setDaysCount(newDaysCount);
+    if (extraState.activeMeals !== undefined) setActiveMeals(extraState.activeMeals);
+    if (extraState.mealDishNames !== undefined) setMealDishNames(extraState.mealDishNames);
+
+    const payload = {
+      items: newItems, users: newUsers, daysCount: newDaysCount,
+      activeMeals: extraState.activeMeals ?? activeMeals,
+      mealDishNames: extraState.mealDishNames ?? mealDishNames
+    };
 
     // V-10 fix: GAS sync debounce 500ms
     if (gasUrl && roomId && isRoomAuthenticated) {
       clearTimeout(gasSyncTimer.current);
       gasSyncTimer.current = setTimeout(() => {
-        syncWithGoogleSheet('write', roomId, {
-          items: newItems,
-          users: newUsers,
-          daysCount: newDaysCount
-        });
+        syncWithGoogleSheet('write', roomId, payload);
       }, 500);
     }
 
     if (db && roomId && firebaseUser) {
-      saveToCloud(newItems, newUsers, newDaysCount);
+      saveToCloud(newItems, newUsers, newDaysCount, extraState);
     } else {
-      const data = { items: newItems, users: newUsers, daysCount: newDaysCount, lastUpdated: new Date().toISOString() };
-      localStorage.setItem('campSyncData_v3', JSON.stringify(data));
+      localStorage.setItem('campSyncData_v3', JSON.stringify({ ...payload, lastUpdated: new Date().toISOString() }));
     }
   };
 
-  const saveToCloud = async (i, u, d) => {
+  const saveToCloud = async (i, u, d, extraState = {}) => {
     if (!db || !roomId || !firebaseUser) return;
     try {
       const roomDocRef = doc(db, 'artifacts', appId, 'public', 'data', 'camp_rooms', roomId);
-      await setDoc(roomDocRef, { items: i, users: u, daysCount: d, lastUpdated: new Date().toISOString() }, { merge: true });
+      await setDoc(roomDocRef, {
+        items: i, users: u, daysCount: d, lastUpdated: new Date().toISOString(),
+        activeMeals: extraState.activeMeals ?? activeMeals,
+        mealDishNames: extraState.mealDishNames ?? mealDishNames
+      }, { merge: true });
     } catch (e) {
       if (import.meta.env.DEV) console.error("雲端存檔錯誤:", e);
     }
@@ -290,6 +302,8 @@ export default function App() {
               setItems(parsed.items || []);
               setUsers(parsed.users || []);
               setDaysCount(parsed.daysCount || 2);
+              if (parsed.activeMeals) setActiveMeals(parsed.activeMeals);
+              if (parsed.mealDishNames) setMealDishNames(parsed.mealDishNames);
             } catch (e) {
               if (import.meta.env.DEV) console.error("解析資料失敗", e);
             }
@@ -368,6 +382,38 @@ export default function App() {
     saveData([...items, newItem], users, daysCount);
     setNewFoodInputs({ ...newFoodInputs, [key]: '' });
     showNotification(`已新增食材`);
+  };
+
+  // --- 天數增減 ---
+  const addDay = () => saveData(items, users, daysCount + 1);
+  const removeDay = () => {
+    if (daysCount <= 1) return;
+    const lastDayIndex = daysCount - 1;
+    const hasItems = items.some(i => i.type === 'food' && i.dayIndex === lastDayIndex);
+    if (hasItems && !window.confirm(`Day ${daysCount} 尚有食材項目，確定刪除？`)) return;
+    const cleaned = items.filter(i => !(i.type === 'food' && i.dayIndex === lastDayIndex));
+    saveData(cleaned, users, daysCount - 1);
+  };
+
+  // --- 刪除餐別 ---
+  const removeMeal = (mealId, dayIndex) => {
+    const hasItems = items.some(i => i.type === 'food' && i.mealId === mealId && i.dayIndex === dayIndex);
+    if (hasItems && !window.confirm(`此餐別尚有食材，確定刪除？`)) return;
+    const cleaned = items.filter(i => !(i.type === 'food' && i.mealId === mealId && i.dayIndex === dayIndex));
+    // 清除此 day-meal 的菜色名稱
+    const newDishNames = { ...mealDishNames };
+    delete newDishNames[`${dayIndex}-${mealId}`];
+    saveData(cleaned, users, daysCount, { mealDishNames: newDishNames });
+  };
+
+  // --- 餐別菜色命名 ---
+  const setDishName = (dayIndex, mealId, name) => {
+    const key = `${dayIndex}-${mealId}`;
+    const newNames = { ...mealDishNames, [key]: name };
+    if (!name) delete newNames[key];
+    setMealDishNames(newNames);
+    // debounce sync — 利用 saveData 機制
+    saveData(items, users, daysCount, { mealDishNames: newNames });
   };
 
   const addExpenseItem = (name, cost, payer) => {
@@ -737,6 +783,14 @@ export default function App() {
               <div className="space-y-8">
                 <FilterSwitch />
 
+                {/* 天數控制 */}
+                <div className="flex items-center gap-3 mb-4">
+                  <span className="text-sm font-bold text-stone-500">天數</span>
+                  <button onClick={removeDay} disabled={daysCount <= 1} className="w-8 h-8 rounded-lg bg-stone-100 hover:bg-stone-200 flex items-center justify-center text-stone-600 disabled:opacity-30 transition-all active:scale-90"><Minus size={16} /></button>
+                  <span className="text-lg font-bold text-stone-800 w-8 text-center">{daysCount}</span>
+                  <button onClick={addDay} className="w-8 h-8 rounded-lg bg-amber-100 hover:bg-amber-200 flex items-center justify-center text-amber-700 transition-all active:scale-90"><Plus size={16} /></button>
+                </div>
+
                 <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
                   {Array.from({ length: daysCount }).map((_, dayIndex) => (
                     <div key={dayIndex} className="space-y-4">
@@ -745,7 +799,7 @@ export default function App() {
                         <div className="h-0.5 bg-amber-100 flex-1 rounded-full"></div>
                       </div>
                       <div className="space-y-4">
-                        {MEAL_TYPES.map(meal => {
+                        {MEAL_TYPES.filter(m => activeMeals.includes(m.id)).map(meal => {
                           const mealItems = items.filter(i => {
                             const isFood = i.type === 'food';
                             const isCorrectMeal = i.dayIndex === dayIndex && i.mealId === meal.id;
@@ -756,13 +810,23 @@ export default function App() {
                           return (
                             <Card key={meal.id} className="p-0 border-l-4 border-l-amber-300">
                               <div className="bg-amber-50/50 p-3 flex justify-between items-center border-b border-amber-100/50">
-                                <h3 className="font-bold text-stone-700 flex items-center gap-2 text-sm">
+                                <h3 className="font-bold text-stone-700 flex items-center gap-2 text-sm cursor-pointer group" onClick={() => {
+                                  const name = window.prompt(`設定「${meal.label}」的菜色名稱`, mealDishNames[`${dayIndex}-${meal.id}`] || '');
+                                  if (name !== null) setDishName(dayIndex, meal.id, name.trim());
+                                }}>
                                   <span className="bg-white p-1.5 rounded-lg text-amber-600 shadow-sm">{meal.icon}</span>
                                   {meal.label}
+                                  {mealDishNames[`${dayIndex}-${meal.id}`] && (
+                                    <span className="text-xs font-normal text-amber-600/70 ml-1">— {mealDishNames[`${dayIndex}-${meal.id}`]}</span>
+                                  )}
+                                  <span className="text-[10px] text-stone-300 opacity-0 group-hover:opacity-100 transition-opacity">✏️</span>
                                 </h3>
-                                <div className="flex gap-2 w-1/2 max-w-[200px]">
-                                  <input type="text" placeholder="新增..." className="w-full bg-white border border-amber-200 rounded-lg px-2 py-1 text-sm outline-none focus:ring-2 focus:ring-amber-400" value={newFoodInputs[`${dayIndex}-${meal.id}`] || ''} onChange={(e) => setNewFoodInputs({ ...newFoodInputs, [`${dayIndex}-${meal.id}`]: e.target.value })} onKeyDown={(e) => e.key === 'Enter' && addFoodItem(dayIndex, meal.id)} />
-                                  <button onClick={() => addFoodItem(dayIndex, meal.id)} className="bg-amber-500 text-white p-1.5 rounded-lg hover:bg-amber-600"><Plus size={16} /></button>
+                                <div className="flex gap-1 items-center">
+                                  <div className="flex gap-2 w-auto max-w-[180px]">
+                                    <input type="text" placeholder="新增..." className="w-full bg-white border border-amber-200 rounded-lg px-2 py-1 text-sm outline-none focus:ring-2 focus:ring-amber-400" value={newFoodInputs[`${dayIndex}-${meal.id}`] || ''} onChange={(e) => setNewFoodInputs({ ...newFoodInputs, [`${dayIndex}-${meal.id}`]: e.target.value })} onKeyDown={(e) => e.key === 'Enter' && addFoodItem(dayIndex, meal.id)} />
+                                    <button onClick={() => addFoodItem(dayIndex, meal.id)} className="bg-amber-500 text-white p-1.5 rounded-lg hover:bg-amber-600 shrink-0"><Plus size={16} /></button>
+                                  </div>
+                                  <button onClick={() => removeMeal(meal.id, dayIndex)} className="p-1 text-stone-300 hover:text-red-500 transition-colors shrink-0" title="刪除此餐別"><X size={14} /></button>
                                 </div>
                               </div>
                               <div className="p-2 space-y-2">
