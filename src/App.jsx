@@ -752,6 +752,7 @@ export default function App() {
                       <p className="text-stone-400 text-sm font-medium">目前沒有符合條件的裝備</p>
                     </div>
                   )}
+                  <AdBanner adSlot="1234567890" adClient="ca-pub-7253456466690152" />
                 </div>
               </div>
             ) : (
@@ -855,6 +856,7 @@ export default function App() {
                 </div>
               </div>
             )}
+            <AdBanner adSlot="1234567890" adClient="ca-pub-7253456466690152" />
           </div>
         )}
 
@@ -940,6 +942,7 @@ export default function App() {
                   </div>
                 </Card>
               )}
+              <AdBanner adSlot="1234567890" adClient="ca-pub-7253456466690152" />
             </div>
           </div>
         )}
@@ -994,7 +997,7 @@ export default function App() {
         )}
         {/* ==== 個人清單分頁 ==== */}
         {activeTab === 'checklist' && (
-          <div className="space-y-6 max-w-2xl mx-auto pb-24">
+          <div className="flex flex-col space-y-6 max-w-2xl mx-auto pb-24">
             <PersonalChecklist
               items={items}
               currentUser={currentUser}
@@ -1002,6 +1005,7 @@ export default function App() {
               hiddenMeals={hiddenMeals}
               togglePacked={togglePacked}
             />
+            <AdBanner adSlot="1234567890" adClient="ca-pub-7253456466690152" />
           </div>
         )}
 
@@ -1224,6 +1228,110 @@ const PersonalChecklist = ({ items, currentUser, hiddenMeals, togglePacked }) =>
         <Section title="待準備 (未勾選)" list={unpackedItems} icon={<Circle size={18} className="text-amber-500" />} emptyMsg="太棒了！目前沒有待準備的項目。" />
         <Section title="已準備 (已勾選)" list={packedItems} icon={<CheckCircle2 size={18} className="text-emerald-500" />} emptyMsg="尚無已準備的項目。" className="opacity-80" />
         <Section title="已取消 (隱藏餐別)" list={cancelledItems} icon={<X size={18} className="text-red-400" />} emptyMsg="無取消項目。" className="opacity-50 grayscale" />
+      </div>
+    </div>
+  );
+};
+
+// --- 廣告 Banner 元件 ---
+// 使用方式：
+//   1. 串接 Google AdSense：在 index.html 加入 AdSense script，然後傳入 adSlot prop
+//      <AdBanner adSlot="1234567890" adClient="ca-pub-XXXXXXXXXXXXXXXX" />
+//   2. 不傳 prop 時顯示 placeholder 輪播（開發模式）
+const AdBanner = ({ adSlot, adClient, className = '' }) => {
+  const bannerRef = React.useRef(null);
+  const [slide, setSlide] = React.useState(0);
+
+  const slides = [
+    {
+      bg: 'from-emerald-500 to-teal-600',
+      emoji: '🏕️',
+      title: 'CampSync Pro',
+      sub: '升級後解鎖無限行程、匯出 PDF 等功能',
+      cta: '了解更多',
+      href: '#',
+    },
+    {
+      bg: 'from-amber-400 to-orange-500',
+      emoji: '🪵',
+      title: '露營裝備推薦',
+      sub: 'Decathlon × CampSync 精選好物一鍵加清單',
+      cta: '立即選購',
+      href: '#',
+    },
+    {
+      bg: 'from-indigo-500 to-violet-600',
+      emoji: '🗺️',
+      title: '台灣露營地圖',
+      sub: '超過 500 個營地評分，輕鬆找到夢想山頭',
+      cta: '搜尋營地',
+      href: '#',
+    },
+  ];
+
+  // 若有 adSlot 就注入 AdSense
+  React.useEffect(() => {
+    if (adSlot && bannerRef.current) {
+      try {
+        const adsbygoogle = window.adsbygoogle || [];
+        adsbygoogle.push({});
+      } catch (e) {
+        // ignore
+      }
+    }
+  }, [adSlot]);
+
+  // placeholder 自動輪播
+  React.useEffect(() => {
+    if (adSlot) return;
+    const timer = setInterval(() => setSlide(s => (s + 1) % slides.length), 4000);
+    return () => clearInterval(timer);
+  }, [adSlot]);
+
+  if (adSlot) {
+    return (
+      <div className={`w-full overflow-hidden rounded-2xl mt-4 ${className}`} style={{ minHeight: 90 }}>
+        <ins
+          className="adsbygoogle"
+          style={{ display: 'block', width: '100%', minHeight: 90 }}
+          data-ad-client={adClient || 'ca-pub-XXXXXXXXXXXXXXXX'}
+          data-ad-slot={adSlot}
+          data-ad-format="auto"
+          data-full-width-responsive="true"
+          ref={bannerRef}
+        />
+      </div>
+    );
+  }
+
+  const cur = slides[slide];
+  return (
+    <div className={`w-full rounded-2xl overflow-hidden shadow-md mt-4 ${className}`}>
+      <a
+        href={cur.href}
+        target="_blank"
+        rel="noopener noreferrer"
+        className={`flex items-center gap-4 px-5 py-4 bg-gradient-to-r ${cur.bg} text-white transition-all duration-700`}
+      >
+        <span className="text-3xl shrink-0 drop-shadow">{cur.emoji}</span>
+        <div className="flex-1 min-w-0">
+          <div className="font-black text-sm leading-tight truncate">{cur.title}</div>
+          <div className="text-xs opacity-80 mt-0.5 truncate">{cur.sub}</div>
+        </div>
+        <span className="shrink-0 bg-white/20 hover:bg-white/30 transition-colors text-white text-xs font-bold px-3 py-1.5 rounded-full whitespace-nowrap">
+          {cur.cta} →
+        </span>
+      </a>
+      {/* 輪播指示點 */}
+      <div className="flex justify-center gap-1.5 py-1.5 bg-stone-100">
+        {slides.map((_, i) => (
+          <button
+            key={i}
+            onClick={() => setSlide(i)}
+            className={`w-1.5 h-1.5 rounded-full transition-all ${i === slide ? 'bg-stone-600 w-4' : 'bg-stone-300'
+              }`}
+          />
+        ))}
       </div>
     </div>
   );
