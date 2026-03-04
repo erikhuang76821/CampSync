@@ -127,6 +127,7 @@ export default function App() {
   const expNameRef = useRef(null);
   const expCostRef = useRef(null);
   const expPayerRef = useRef(null);
+  const fileInputRef = useRef(null);
   // --- 狀態管理 ---
   const [activeTab, setActiveTab] = useState('list');
   const [listMode, setListMode] = useState('gear');
@@ -411,6 +412,37 @@ export default function App() {
     localStorage.setItem('camp_gear_templates', JSON.stringify(newTemplates));
     showNotification('模板已刪除');
   };
+  const downloadTemplateAsFile = (template) => {
+    const blob = new Blob([JSON.stringify(template, null, 2)], { type: 'application/json' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `${template.name || 'campsync_gear'}.json`;
+    a.click();
+    URL.revokeObjectURL(url);
+    showNotification(`已下載「${template.name}」`);
+  };
+  const downloadCurrentAsFile = () => {
+    const gearItems = items.filter(i => i.type === 'gear').map(({ name, category, quantity }) => ({ name, category, quantity }));
+    if (gearItems.length === 0) { showNotification('目前沒有裝備可匯出', 'error'); return; }
+    const template = { name: templateName.trim() || `CampSync_${roomId}`, items: gearItems, createdAt: new Date().toISOString() };
+    downloadTemplateAsFile(template);
+  };
+  const uploadTemplateFromFile = (e) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    const reader = new FileReader();
+    reader.onload = (ev) => {
+      try {
+        const data = JSON.parse(ev.target.result);
+        if (!data.items || !Array.isArray(data.items)) { showNotification('無效的模板格式', 'error'); return; }
+        const template = { name: data.name || file.name.replace('.json', ''), items: data.items, createdAt: data.createdAt || new Date().toISOString() };
+        importTemplate(template);
+      } catch { showNotification('JSON 解析失敗', 'error'); }
+    };
+    reader.readAsText(file);
+    e.target.value = ''; // reset
+  };
   const togglePacked = (id) => saveData(items.map(i => i.id === id ? { ...i, packed: !i.packed } : i), users, daysCount);
   const updateAssignment = (id, user) => saveData(items.map(i => i.id === id ? { ...i, assignedTo: user === "unassigned" ? null : user } : i), users, daysCount);
   const updateCost = (id, cost) => saveData(items.map(i => i.id === id ? { ...i, cost: parseInt(cost) || 0 } : i), users, daysCount);
@@ -629,6 +661,7 @@ export default function App() {
                   <Card className="p-5 border-l-4 border-l-stone-300">
                     <h3 className="font-bold text-lg mb-4 text-stone-700 flex items-center gap-2"><Download className="w-5 h-5 text-stone-500" /> 裝備模板</h3>
                     <div className="space-y-3">
+                      {/* 儲存到 localStorage */}
                       <div className="flex gap-2">
                         <input
                           type="text" placeholder="模板名稱..."
@@ -637,7 +670,17 @@ export default function App() {
                           onKeyDown={(e) => e.key === 'Enter' && exportTemplate()}
                         />
                         <Button variant="secondary" onClick={exportTemplate} className="text-sm whitespace-nowrap">
-                          <Upload size={14} /> 匯出
+                          <Upload size={14} /> 儲存
+                        </Button>
+                      </div>
+                      {/* JSON 檔案上傳/下載 */}
+                      <div className="flex gap-2">
+                        <input ref={fileInputRef} type="file" accept=".json" className="hidden" onChange={uploadTemplateFromFile} />
+                        <Button variant="secondary" onClick={() => fileInputRef.current?.click()} className="flex-1 text-sm">
+                          <Upload size={14} /> 從檔案匯入
+                        </Button>
+                        <Button variant="secondary" onClick={downloadCurrentAsFile} className="flex-1 text-sm">
+                          <Download size={14} /> 下載為檔案
                         </Button>
                       </div>
                       {savedTemplates.length > 0 && (
@@ -651,10 +694,13 @@ export default function App() {
                                 <span className="text-xs text-stone-400">({tpl.items.length} 項)</span>
                               </div>
                               <div className="flex items-center gap-1">
-                                <button onClick={() => importTemplate(tpl)} className="px-3 py-1 text-xs font-bold text-emerald-600 bg-emerald-50 rounded-lg hover:bg-emerald-100 transition-all active:scale-95">
-                                  <Download size={12} className="inline mr-1" />載入
+                                <button onClick={() => importTemplate(tpl)} className="px-2 py-1 text-xs font-bold text-emerald-600 bg-emerald-50 rounded-lg hover:bg-emerald-100 transition-all active:scale-95" title="載入">
+                                  <Download size={12} className="inline" />
                                 </button>
-                                <button onClick={() => deleteTemplate(idx)} className="p-1 text-stone-300 hover:text-red-500 transition-colors">
+                                <button onClick={() => downloadTemplateAsFile(tpl)} className="px-2 py-1 text-xs font-bold text-blue-600 bg-blue-50 rounded-lg hover:bg-blue-100 transition-all active:scale-95" title="下載 JSON">
+                                  <Upload size={12} className="inline" />
+                                </button>
+                                <button onClick={() => deleteTemplate(idx)} className="p-1 text-stone-300 hover:text-red-500 transition-colors" title="刪除">
                                   <Trash2 size={14} />
                                 </button>
                               </div>
