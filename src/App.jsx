@@ -35,7 +35,7 @@ import {
 import { initializeApp } from "firebase/app";
 import { getAuth, signInAnonymously, onAuthStateChanged, signInWithCustomToken } from "firebase/auth";
 import { getFirestore, doc, setDoc, onSnapshot } from "firebase/firestore";
-import { calculateDebts, INITIAL_CATEGORIES } from './logic';
+import { calculateDebts, computeSettlement, INITIAL_CATEGORIES } from './logic';
 
 // --- 全域設定 ---
 let firebaseConfig = null;
