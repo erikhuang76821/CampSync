@@ -118,6 +118,8 @@ export default function App() {
   const expCostRef = useRef(null);
   const expPayerRef = useRef(null);
   const fileInputRef = useRef(null);
+  const lastLocalWrite = useRef(0);  // 最近一次本地寫入時間戳
+  const isLocalUpdate = useRef(false); // Firebase onSnapshot 迴圈保護
   // --- 狀態管理 ---
   const [activeTab, setActiveTab] = useState('list');
   const [listMode, setListMode] = useState('gear');
@@ -194,6 +196,11 @@ export default function App() {
     const roomDocRef = doc(db, 'artifacts', appId, 'public', 'data', 'camp_rooms', roomId);
 
     const unsubscribe = onSnapshot(roomDocRef, (docSnap) => {
+      // 跳過自己寫入觸發的回撥，避免迴圈覆蓋
+      if (isLocalUpdate.current) {
+        isLocalUpdate.current = false;
+        return;
+      }
       if (docSnap.exists()) {
         const data = docSnap.data();
         setItems(data.items || []);
@@ -214,9 +221,77 @@ export default function App() {
     return () => unsubscribe();
   }, [isRoomAuthenticated, firebaseUser, roomId, currentUser]);
 
+  // --- GAS 定時輪詢 (Polling) — 多人即時同步 ---
+  const gasPollTimer = useRef(null);
+  useEffect(() => {
+    if (!gasUrl || !roomId || !isRoomAuthenticated || !roomPassword || !currentUser) return;
+
+    const POLL_INTERVAL = 5000; // 5 秒
+
+    const pollFromGAS = async () => {
+      // 如果剛寫入不到 2 秒，跳過此次 poll 避免覆蓋自己的資料
+      const sinceLastWrite = Date.now() - lastLocalWrite.current;
+      if (sinceLastWrite < 2000) {
+        console.log(`[GAS Poll] 跳過 — 距上次寫入 ${sinceLastWrite}ms`);
+        return;
+      }
+
+      const pwHash = roomPassword.length === 64 ? roomPassword : await hashPassword(roomPassword);
+      try {
+        console.log(`[GAS Poll] 發送請求... roomId=${roomId}`);
+        const response = await fetch(`${gasUrl}?roomId=${encodeURIComponent(roomId)}&pw=${encodeURIComponent(pwHash)}`);
+        const result = await response.json();
+        console.log(`[GAS Poll] 回應 status=${result.status}, hasData=${!!result.data}`);
+
+        if (result.status === 'success' && result.data) {
+          const parsed = JSON.parse(result.data);
+
+          // 只有遠端資料比本地寫入更新時才套用
+          const remoteUpdated = parsed.lastUpdated ? new Date(parsed.lastUpdated).getTime() : 0;
+          console.log(`[GAS Poll] remoteUpdated=${remoteUpdated}, lastLocalWrite=${lastLocalWrite.current}, diff=${remoteUpdated - lastLocalWrite.current}ms, remoteItems=${(parsed.items || []).length}`);
+          if (remoteUpdated > lastLocalWrite.current) {
+            console.log(`[GAS Poll] ✅ 套用遠端資料 (${(parsed.items || []).length} items)`);
+            setItems(parsed.items || []);
+            const remoteUsers = parsed.users || [];
+            if (currentUser && !remoteUsers.includes(currentUser)) {
+              setUsers([...remoteUsers, currentUser]);
+            } else {
+              setUsers(remoteUsers);
+            }
+            setDaysCount(parsed.daysCount || 2);
+            if (parsed.activeMeals) setActiveMeals(parsed.activeMeals);
+            if (parsed.mealDishNames) setMealDishNames(parsed.mealDishNames);
+            if (parsed.hiddenMeals) setHiddenMeals(parsed.hiddenMeals);
+          } else {
+            console.log(`[GAS Poll] ⏭️ 跳過 — 遠端資料不比本地新`);
+          }
+        } else if (result.status === 'wrong_password') {
+          // 密碼被更改，登出
+          clearInterval(gasPollTimer.current);
+          setIsRoomAuthenticated(false);
+          localStorage.removeItem('camp_room_id');
+          localStorage.removeItem('camp_room_password');
+        } else {
+          console.log(`[GAS Poll] 未處理的狀態:`, result.status);
+        }
+      } catch (e) {
+        console.warn('[GAS Poll] 失敗:', e);
+      }
+    };
+
+    // 立即 poll 一次，然後每 5 秒輪詢
+    pollFromGAS();
+    gasPollTimer.current = setInterval(pollFromGAS, POLL_INTERVAL);
+
+    return () => clearInterval(gasPollTimer.current);
+  }, [gasUrl, roomId, isRoomAuthenticated, roomPassword, currentUser]);
+
   // --- 資料存取輔助 ---
   const gasSyncTimer = useRef(null);
   const saveData = (newItems, newUsers, newDaysCount, extraState = {}) => {
+    // 記錄本地寫入時間戳，防止 poll 回來的舊資料覆蓋
+    lastLocalWrite.current = Date.now();
+
     setItems(newItems);
     setUsers(newUsers);
     setDaysCount(newDaysCount);
@@ -228,7 +303,8 @@ export default function App() {
       items: newItems, users: newUsers, daysCount: newDaysCount,
       activeMeals: extraState.activeMeals ?? activeMeals,
       mealDishNames: extraState.mealDishNames ?? mealDishNames,
-      hiddenMeals: extraState.hiddenMeals ?? hiddenMeals
+      hiddenMeals: extraState.hiddenMeals ?? hiddenMeals,
+      lastUpdated: new Date().toISOString()
     };
 
     // V-10 fix: GAS sync debounce 500ms
@@ -242,13 +318,14 @@ export default function App() {
     if (db && roomId && firebaseUser) {
       saveToCloud(newItems, newUsers, newDaysCount, extraState);
     } else {
-      localStorage.setItem('campSyncData_v3', JSON.stringify({ ...payload, lastUpdated: new Date().toISOString() }));
+      localStorage.setItem('campSyncData_v3', JSON.stringify(payload));
     }
   };
 
   const saveToCloud = async (i, u, d, extraState = {}) => {
     if (!db || !roomId || !firebaseUser) return;
     try {
+      isLocalUpdate.current = true; // 標記本地寫入，防止 onSnapshot 回撥覆蓋
       const roomDocRef = doc(db, 'artifacts', appId, 'public', 'data', 'camp_rooms', roomId);
       await setDoc(roomDocRef, {
         items: i, users: u, daysCount: d, lastUpdated: new Date().toISOString(),
@@ -257,6 +334,7 @@ export default function App() {
         hiddenMeals: extraState.hiddenMeals ?? hiddenMeals
       }, { merge: true });
     } catch (e) {
+      isLocalUpdate.current = false;
       if (import.meta.env.DEV) console.error("雲端存檔錯誤:", e);
     }
   };
