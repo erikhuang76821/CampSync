@@ -33,6 +33,7 @@ import {
 import { initializeApp } from "firebase/app";
 import { getAuth, signInAnonymously, onAuthStateChanged, signInWithCustomToken } from "firebase/auth";
 import { getFirestore, doc, setDoc, onSnapshot } from "firebase/firestore";
+import { calculateDebts, INITIAL_CATEGORIES } from './logic';
 
 // --- 全域設定 ---
 const firebaseConfig = typeof window.__firebase_config !== 'undefined' ? JSON.parse(window.__firebase_config) : null;
@@ -52,7 +53,6 @@ if (firebaseConfig) {
 
 // --- 常數設定 ---
 const DEFAULT_GAS_URL = "https://script.google.com/macros/s/AKfycbwHuZ8Ha5MdVVQ_ybU5-ezNAFABmdhLb-48BCGnAX_BZjk3_Nif7DEDj8iQhy1ES656/exec";
-const INITIAL_CATEGORIES = ['睡眠裝備', '廚房炊具', '食物飲水', '休閒娛樂', '照明工具', '其他'];
 const MEAL_TYPES = [
   { id: 'breakfast', label: '早餐', icon: <Sunrise className="w-4 h-4" /> },
   { id: 'lunch', label: '午餐', icon: <Sun className="w-4 h-4" /> },
@@ -94,31 +94,6 @@ const Button = ({ children, onClick, variant = 'primary', className = "", disabl
       {loading ? <div className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin"></div> : children}
     </button>
   );
-};
-
-// --- 邏輯輔助函式 ---
-const calculateDebts = (balances) => {
-  let debtors = [];
-  let creditors = [];
-  Object.entries(balances).forEach(([user, amount]) => {
-    if (amount < -0.01) debtors.push({ user, amount });
-    if (amount > 0.01) creditors.push({ user, amount });
-  });
-  debtors.sort((a, b) => a.amount - b.amount);
-  creditors.sort((a, b) => b.amount - a.amount);
-  let transactions = [];
-  let i = 0, j = 0;
-  while (i < debtors.length && j < creditors.length) {
-    let debtor = debtors[i], creditor = creditors[j];
-    let amount = Math.min(Math.abs(debtor.amount), creditor.amount);
-    amount = Math.round(amount * 100) / 100;
-    if (amount > 0) transactions.push({ from: debtor.user, to: creditor.user, amount: amount });
-    debtor.amount += amount; debtor.amount = Math.round(debtor.amount * 100) / 100;
-    creditor.amount -= amount; creditor.amount = Math.round(creditor.amount * 100) / 100;
-    if (Math.abs(debtor.amount) < 0.01) i++;
-    if (Math.abs(creditor.amount) < 0.01) j++;
-  }
-  return transactions;
 };
 
 // --- 主應用程式元件 ---
