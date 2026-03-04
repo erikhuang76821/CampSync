@@ -133,6 +133,7 @@ export default function App() {
   const [daysCount, setDaysCount] = useState(2);
   const [activeMeals, setActiveMeals] = useState(MEAL_TYPES.map(m => m.id));
   const [mealDishNames, setMealDishNames] = useState({});
+  const [hiddenMeals, setHiddenMeals] = useState({}); // { dayIndex: [mealId, ...] }
   const [currentUser, setCurrentUser] = useState(null);
   const [showUnpackedOnly, setShowUnpackedOnly] = useState(false);
 
@@ -204,6 +205,7 @@ export default function App() {
         setDaysCount(data.daysCount || 2);
         if (data.activeMeals) setActiveMeals(data.activeMeals);
         if (data.mealDishNames) setMealDishNames(data.mealDishNames);
+        if (data.hiddenMeals) setHiddenMeals(data.hiddenMeals);
       }
     }, (error) => {
       if (import.meta.env.DEV) console.error("Firebase 同步錯誤:", error);
@@ -219,11 +221,13 @@ export default function App() {
     setDaysCount(newDaysCount);
     if (extraState.activeMeals !== undefined) setActiveMeals(extraState.activeMeals);
     if (extraState.mealDishNames !== undefined) setMealDishNames(extraState.mealDishNames);
+    if (extraState.hiddenMeals !== undefined) setHiddenMeals(extraState.hiddenMeals);
 
     const payload = {
       items: newItems, users: newUsers, daysCount: newDaysCount,
       activeMeals: extraState.activeMeals ?? activeMeals,
-      mealDishNames: extraState.mealDishNames ?? mealDishNames
+      mealDishNames: extraState.mealDishNames ?? mealDishNames,
+      hiddenMeals: extraState.hiddenMeals ?? hiddenMeals
     };
 
     // V-10 fix: GAS sync debounce 500ms
@@ -248,7 +252,8 @@ export default function App() {
       await setDoc(roomDocRef, {
         items: i, users: u, daysCount: d, lastUpdated: new Date().toISOString(),
         activeMeals: extraState.activeMeals ?? activeMeals,
-        mealDishNames: extraState.mealDishNames ?? mealDishNames
+        mealDishNames: extraState.mealDishNames ?? mealDishNames,
+        hiddenMeals: extraState.hiddenMeals ?? hiddenMeals
       }, { merge: true });
     } catch (e) {
       if (import.meta.env.DEV) console.error("雲端存檔錯誤:", e);
@@ -304,6 +309,7 @@ export default function App() {
               setDaysCount(parsed.daysCount || 2);
               if (parsed.activeMeals) setActiveMeals(parsed.activeMeals);
               if (parsed.mealDishNames) setMealDishNames(parsed.mealDishNames);
+              if (parsed.hiddenMeals) setHiddenMeals(parsed.hiddenMeals);
             } catch (e) {
               if (import.meta.env.DEV) console.error("解析資料失敗", e);
             }
@@ -395,15 +401,21 @@ export default function App() {
     saveData(cleaned, users, daysCount - 1);
   };
 
-  // --- 刪除餐別 ---
+  // --- 隱藏餐別（不刪 items）---
   const removeMeal = (mealId, dayIndex) => {
-    const hasItems = items.some(i => i.type === 'food' && i.mealId === mealId && i.dayIndex === dayIndex);
-    if (hasItems && !window.confirm(`此餐別尚有食材，確定刪除？`)) return;
-    const cleaned = items.filter(i => !(i.type === 'food' && i.mealId === mealId && i.dayIndex === dayIndex));
-    // 清除此 day-meal 的菜色名稱
-    const newDishNames = { ...mealDishNames };
-    delete newDishNames[`${dayIndex}-${mealId}`];
-    saveData(cleaned, users, daysCount, { mealDishNames: newDishNames });
+    const dayHidden = hiddenMeals[dayIndex] || [];
+    if (dayHidden.includes(mealId)) return;
+    const newHidden = { ...hiddenMeals, [dayIndex]: [...dayHidden, mealId] };
+    saveData(items, users, daysCount, { hiddenMeals: newHidden });
+  };
+
+  // --- 加回隱藏餐別 ---
+  const restoreMeal = (mealId, dayIndex) => {
+    const dayHidden = (hiddenMeals[dayIndex] || []).filter(id => id !== mealId);
+    const newHidden = { ...hiddenMeals };
+    if (dayHidden.length === 0) delete newHidden[dayIndex];
+    else newHidden[dayIndex] = dayHidden;
+    saveData(items, users, daysCount, { hiddenMeals: newHidden });
   };
 
   // --- 餐別菜色命名 ---
@@ -796,10 +808,23 @@ export default function App() {
                     <div key={dayIndex} className="space-y-4">
                       <div className="flex items-center gap-3">
                         <span className="bg-amber-600 text-white px-4 py-1.5 rounded-xl text-sm font-bold shadow-sm">Day {dayIndex + 1}</span>
+                        {/* 隱藏的餐別可加回 */}
+                        {(hiddenMeals[dayIndex] || []).length > 0 && (
+                          <div className="flex gap-1 items-center">
+                            {(hiddenMeals[dayIndex] || []).map(hid => {
+                              const meal = MEAL_TYPES.find(m => m.id === hid);
+                              return meal ? (
+                                <button key={hid} onClick={() => restoreMeal(hid, dayIndex)} className="px-2 py-1 text-xs font-bold bg-amber-50 text-amber-600 rounded-lg hover:bg-amber-100 border border-amber-200 transition-all active:scale-95 flex items-center gap-1" title={`加回 ${meal.label}`}>
+                                  <Plus size={10} />{meal.label}
+                                </button>
+                              ) : null;
+                            })}
+                          </div>
+                        )}
                         <div className="h-0.5 bg-amber-100 flex-1 rounded-full"></div>
                       </div>
                       <div className="space-y-4">
-                        {MEAL_TYPES.filter(m => activeMeals.includes(m.id)).map(meal => {
+                        {MEAL_TYPES.filter(m => !(hiddenMeals[dayIndex] || []).includes(m.id)).map(meal => {
                           const mealItems = items.filter(i => {
                             const isFood = i.type === 'food';
                             const isCorrectMeal = i.dayIndex === dayIndex && i.mealId === meal.id;
@@ -817,7 +842,7 @@ export default function App() {
                                   <span className="bg-white p-1.5 rounded-lg text-amber-600 shadow-sm">{meal.icon}</span>
                                   {meal.label}
                                   {mealDishNames[`${dayIndex}-${meal.id}`] && (
-                                    <span className="text-xs font-normal text-amber-600/70 ml-1">— {mealDishNames[`${dayIndex}-${meal.id}`]}</span>
+                                    <span className="text-xs font-bold text-amber-700 ml-1">— {mealDishNames[`${dayIndex}-${meal.id}`]}</span>
                                   )}
                                   <span className="text-[10px] text-stone-300 opacity-0 group-hover:opacity-100 transition-opacity">✏️</span>
                                 </h3>
